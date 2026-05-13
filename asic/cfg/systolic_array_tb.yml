@@ -1,0 +1,14 @@
+# RTL simulation-only inputs.
+
+sim.inputs.tb_incdir: [
+  "../source",
+  "../tb",
+]
+sim.inputs.tb_incdir_meta: [subst]
+
+sim.inputs.tb_input_files: [
+  "../tb/accel_top_tb.sv",
+]
+sim.inputs.tb_input_files_meta: [append, subst]
+
+sim.inputs.trace_files: []

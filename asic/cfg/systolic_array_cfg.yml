@@ -1,0 +1,55 @@
+# Main Hammer config for the sparse systolic array accelerator.
+
+synthesis.inputs.top_module: "accel_top"
+sim.inputs.tb_name: "accel_top_tb"
+
+# No hardened macros in the first-pass ASIC build. The scratchpad intentionally
+# infers registers until it is replaced with generated SRAM macros.
+synthesis.inputs.preserve_modules: []
+
+sram_generator.fakeram.pinPitch_nm: 700
+vlsi.inputs.sram_parameters: [
+  {name: "fakeram_d64_w32", family: "1rw", depth: 64, width: 32,
+   mask: True, mux: 1, vt: ""},
+]
+
+vlsi.inputs:
+  custom_sdc_constraints: []
+  custom_sdc_files:
+    - "constraints.tcl"
+  custom_sdc_files_meta: prependlocal
+
+# Copy sim input options for Conformal's HDL parser.
+formal.imputs.hdl_cmd_list: sim.inputs.options
+formal.imputs.hdl_cmd_list_meta: [crossref, subst]
+
+# Larger floorplan with explicit SRAM macro placement.  Automatic placement leaves
+# the 16 fakeram macros floating and causes Innovus legalization failures.
+vlsi.inputs.placement_constraints:
+  - path: "TOP"
+    type: toplevel
+    width:  5000
+    height: 5000
+    x: 0
+    y: 0
+    margins: {left: 0, right: 0, top: 0, bottom: 0}
+
+  # Top-left scratchpad macros: bank 0.
+  - {path: "TOP/u_scratchpad/bank_gen[0].lane_gen[0].u_act_mem/macro.mem",    type: hardmacro, x: 120, y: 3900, width: 117.760, height: 106.080, orientation: r0}
+  - {path: "TOP/u_scratchpad/bank_gen[0].lane_gen[0].u_weight_mem/macro.mem", type: hardmacro, x: 300, y: 3900, width: 117.760, height: 106.080, orientation: r0}
+  - {path: "TOP/u_scratchpad/bank_gen[0].lane_gen[1].u_act_mem/macro.mem",    type: hardmacro, x: 120, y: 4080, width: 117.760, height: 106.080, orientation: r0}
+  - {path: "TOP/u_scratchpad/bank_gen[0].lane_gen[1].u_weight_mem/macro.mem", type: hardmacro, x: 300, y: 4080, width: 117.760, height: 106.080, orientation: r0}
+  - {path: "TOP/u_scratchpad/bank_gen[0].lane_gen[2].u_act_mem/macro.mem",    type: hardmacro, x: 120, y: 4260, width: 117.760, height: 106.080, orientation: r0}
+  - {path: "TOP/u_scratchpad/bank_gen[0].lane_gen[2].u_weight_mem/macro.mem", type: hardmacro, x: 300, y: 4260, width: 117.760, height: 106.080, orientation: r0}
+  - {path: "TOP/u_scratchpad/bank_gen[0].lane_gen[3].u_act_mem/macro.mem",    type: hardmacro, x: 120, y: 4440, width: 117.760, height: 106.080, orientation: r0}
+  - {path: "TOP/u_scratchpad/bank_gen[0].lane_gen[3].u_weight_mem/macro.mem", type: hardmacro, x: 300, y: 4440, width: 117.760, height: 106.080, orientation: r0}
+
+  # Top-right scratchpad macros: bank 1.
+  - {path: "TOP/u_scratchpad/bank_gen[1].lane_gen[0].u_act_mem/macro.mem",    type: hardmacro, x: 4560, y: 3900, width: 117.760, height: 106.080, orientation: my}
+  - {path: "TOP/u_scratchpad/bank_gen[1].lane_gen[0].u_weight_mem/macro.mem", type: hardmacro, x: 4740, y: 3900, width: 117.760, height: 106.080, orientation: my}
+  - {path: "TOP/u_scratchpad/bank_gen[1].lane_gen[1].u_act_mem/macro.mem",    type: hardmacro, x: 4560, y: 4080, width: 117.760, height: 106.080, orientation: my}
+  - {path: "TOP/u_scratchpad/bank_gen[1].lane_gen[1].u_weight_mem/macro.mem", type: hardmacro, x: 4740, y: 4080, width: 117.760, height: 106.080, orientation: my}
+  - {path: "TOP/u_scratchpad/bank_gen[1].lane_gen[2].u_act_mem/macro.mem",    type: hardmacro, x: 4560, y: 4260, width: 117.760, height: 106.080, orientation: my}
+  - {path: "TOP/u_scratchpad/bank_gen[1].lane_gen[2].u_weight_mem/macro.mem", type: hardmacro, x: 4740, y: 4260, width: 117.760, height: 106.080, orientation: my}
+  - {path: "TOP/u_scratchpad/bank_gen[1].lane_gen[3].u_act_mem/macro.mem",    type: hardmacro, x: 4560, y: 4440, width: 117.760, height: 106.080, orientation: my}
+  - {path: "TOP/u_scratchpad/bank_gen[1].lane_gen[3].u_weight_mem/macro.mem", type: hardmacro, x: 4740, y: 4440, width: 117.760, height: 106.080, orientation: my}

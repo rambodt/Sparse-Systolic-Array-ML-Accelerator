@@ -1,0 +1,20 @@
+# Synthesizable RTL for the accelerator.
+
+synthesis.inputs.input_files: [
+  "${bsg_root}/bsg_misc/bsg_defines.v",
+  "${bsg_root}/bsg_misc/bsg_expand_bitmask.v",
+  "${bsg_root}/bsg_mem/bsg_mem_1rw_sync_synth.v",
+  "${bsg_root}/bsg_mem/bsg_mem_1rw_sync_mask_write_byte_synth.v",
+  "../source/pe.sv",
+  "../source/array_top.sv",
+  "../source/scratchpad.sv",
+  "../source/dma_ctrl.sv",
+  "../source/sparsity_unit.sv",
+  "../source/output_buffer.sv",
+  "../source/accel_top.sv",
+]
+synthesis.inputs.input_files_meta: [append, subst]
+
+# Add synthesis input files to RTL simulation inputs.
+sim.inputs.input_files: synthesis.inputs.input_files
+sim.inputs.input_files_meta: [crossref, subst]

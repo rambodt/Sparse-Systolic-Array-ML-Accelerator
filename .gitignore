@@ -1,0 +1,34 @@
+# ModelSim
+work/
+transcript
+vsim.wlf
+*.wlf
+
+# Quartus generated — keep only .qpf, .qsf, .sdc
+synth/db/
+synth/incremental_db/
+synth/output_files/
+synth/simulation/
+synth/c5_pin_model_dump.txt
+synth/a.out
+synth/*.qws
+synth/*.rpt
+synth/*.smsg
+
+# Python
+__pycache__/
+*.pyc
+scripts/plots/
+
+# Hammer / Cadence ASIC flow
+ee477-hammer-cad/
+asic/build/
+asic/hammer.log
+asic/output.json
+asic/novas.*
+asic/verdiLog/
+
+# Claude
+.claude
+
+CONTEXT.md

@@ -1,0 +1,14 @@
+# Simulation results for roofline analysis.
+# Columns: name, M, K, N, sparsity, total_cycles, skipped_cycles, fmax_mhz
+# total_cycles / skipped_cycles: replace with measured values from ModelSim.
+# Estimated values below use the theoretical per-tile cycle count (4 x ARRAY_SIZE = 64).
+# Formula: total_cycles = 4 x M x N x K / ARRAY_SIZE^2
+name,M,K,N,sparsity,total_cycles,skipped_cycles,fmax_mhz
+tiny_dense,16,16,16,0.0,64,0,100
+medium_dense,64,64,64,0.0,4096,0,100
+large_dense,256,256,256,0.0,262144,0,100
+sparse_50pct,64,64,64,0.5,4096,992,100
+sparse_80pct,64,64,64,0.8,4096,1587,100
+tall_skinny,256,16,256,0.0,16384,0,100
+wide_flat,16,256,16,0.0,1024,0,100
+real_world,128,128,128,0.3,32768,4759,100

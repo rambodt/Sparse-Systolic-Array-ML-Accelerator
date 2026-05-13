@@ -1,0 +1,4 @@
+QUARTUS_VERSION = "23.1"
+DATE = "2026"
+
+PROJECT_REVISION = "systolic_array"
