@@ -6,11 +6,12 @@
 //   +N=<64|128|256>       square matrix dimension, default 64
 //   +MODE=<dense|sparse50|sparse75|sparse90>, default dense
 //
-// The accelerator computes one 16x16 tile product per run. This testbench
-// tiles C = A * B in software around the DUT:
+// The accelerator computes one 16x16 tile product per run and keeps the
+// output-buffer partial sums on chip across the K tile loop. This testbench
+// tiles C = A * B around the DUT:
 //   for tile_i, tile_j, tile_k:
 //     run DUT on A[tile_i,tile_k] and B[tile_k,tile_j]
-//     read 16x16 partial result and accumulate into host-side C
+//   read final 16x16 C tile once
 
 module accel_benchmark_tb;
     timeunit 1ps;
@@ -20,17 +21,16 @@ module accel_benchmark_tb;
     localparam int DATA_WIDTH = 8;
     localparam int ACC_WIDTH  = 32;
     localparam int MAX_N      = 256;
-    localparam int TILE_WORDS = ARRAY_SIZE * ARRAY_SIZE;
-    localparam int ADDR_W     = $clog2(TILE_WORDS);
     localparam int ROW_W      = $clog2(ARRAY_SIZE);
     localparam time TB_SAMPLE_DELAY = 2000ps;
     localparam longint unsigned CLK_PERIOD_PS = 5000;
 
-    logic                   clk, rst_n, start, done;
+    logic                   clk, rst_n, start, clear_accum, done;
     logic                   host_wr_en, host_wr_rdy;
-    logic [ADDR_W-1:0]      host_wr_addr;
-    logic [DATA_WIDTH-1:0]  host_wr_data;
+    logic [ROW_W-1:0]       host_wr_addr;
+    logic [ARRAY_SIZE*DATA_WIDTH-1:0] host_wr_data;
     logic [ROW_W-1:0]       rd_row, rd_col;
+    logic [ARRAY_SIZE*ACC_WIDTH-1:0] rd_row_data;
     logic [ACC_WIDTH-1:0]   rd_data;
     logic [31:0]            total_mac_cycles, skipped_mac_cycles;
 
@@ -93,6 +93,7 @@ module accel_benchmark_tb;
     task apply_reset();
         rst_n = 0;
         start = 0;
+        clear_accum = 0;
         host_wr_en = 0;
         host_wr_addr = '0;
         host_wr_data = '0;
@@ -110,13 +111,12 @@ module accel_benchmark_tb;
         end
         @(negedge clk);
         for (int r = 0; r < ARRAY_SIZE; r++) begin
-            for (int c = 0; c < ARRAY_SIZE; c++) begin
-                host_wr_en   = 1'b1;
-                host_wr_addr = ADDR_W'(r * ARRAY_SIZE + c);
-                host_wr_data = data[r][c];
-                @(posedge clk);
-                @(negedge clk);
-            end
+            host_wr_en   = 1'b1;
+            host_wr_addr = ROW_W'(r);
+            for (int c = 0; c < ARRAY_SIZE; c++)
+                host_wr_data[c*DATA_WIDTH +: DATA_WIDTH] = data[r][c];
+            @(posedge clk);
+            @(negedge clk);
         end
         host_wr_en = 1'b0;
     endtask
@@ -131,23 +131,22 @@ module accel_benchmark_tb;
         $finish;
     endtask
 
-    task read_and_accumulate_tile(input int base_r, input int base_c);
+    task read_final_tile(input int base_r, input int base_c);
         read_start_cycle = cycle_count;
         for (int r = 0; r < ARRAY_SIZE; r++) begin
-            for (int c = 0; c < ARRAY_SIZE; c++) begin
-                @(negedge clk);
-                rd_row = ROW_W'(r);
-                rd_col = ROW_W'(c);
-                repeat (5) @(posedge clk);
-                #(TB_SAMPLE_DELAY);
-                C_hw[base_r + r][base_c + c] += rd_data;
-            end
+            @(negedge clk);
+            rd_row = ROW_W'(r);
+            rd_col = '0;
+            repeat (5) @(posedge clk);
+            #(TB_SAMPLE_DELAY);
+            for (int c = 0; c < ARRAY_SIZE; c++)
+                C_hw[base_r + r][base_c + c] = rd_row_data[c*ACC_WIDTH +: ACC_WIDTH];
         end
         read_done_cycle = cycle_count;
         read_cycles += read_done_cycle - read_start_cycle;
     endtask
 
-    task run_accel_tile(input int tile_i, input int tile_j, input int tile_k);
+    task run_accel_tile(input int tile_i, input int tile_j, input int tile_k, input bit clear_tile);
         int base_i;
         int base_j;
         int base_k;
@@ -165,19 +164,17 @@ module accel_benchmark_tb;
 
             tile_start_cycle = cycle_count;
             @(negedge clk);
+            clear_accum = clear_tile;
             start = 1'b1;
             @(posedge clk);
             @(negedge clk);
             start = 1'b0;
+            clear_accum = 1'b0;
             write_tile(tile_b);
             write_tile(tile_a);
             wait_done(1000);
             tile_done_cycle = cycle_count;
             accel_cycles += tile_done_cycle - tile_start_cycle;
-
-            repeat (3 * ARRAY_SIZE) @(posedge clk);
-            #(TB_SAMPLE_DELAY);
-            read_and_accumulate_tile(base_i, base_j);
             tile_runs++;
         end
     endtask
@@ -268,8 +265,11 @@ module accel_benchmark_tb;
         for (int ti = 0; ti < bench_n / ARRAY_SIZE; ti++) begin
             for (int tj = 0; tj < bench_n / ARRAY_SIZE; tj++) begin
                 for (int tk = 0; tk < bench_n / ARRAY_SIZE; tk++) begin
-                    run_accel_tile(ti, tj, tk);
+                    run_accel_tile(ti, tj, tk, tk == 0);
                 end
+                repeat (3 * ARRAY_SIZE) @(posedge clk);
+                #(TB_SAMPLE_DELAY);
+                read_final_tile(ti * ARRAY_SIZE, tj * ARRAY_SIZE);
             end
         end
         bench_end_cycle = cycle_count;

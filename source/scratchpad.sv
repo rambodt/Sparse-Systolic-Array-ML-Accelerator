@@ -10,11 +10,11 @@ module scratchpad #(
     // Bank swap — DMA asserts for one cycle to flip active/inactive
     input  logic                                         bank_swap,
 
-    // Write port — DMA writes to inactive bank, one word per cycle
+    // Write port — DMA writes one complete ARRAY_SIZE-byte row per cycle.
     input  logic                                         wr_en,
     input  logic                                         wr_type,    // 0=weight  1=activation
-    input  logic [$clog2(ARRAY_SIZE*ARRAY_SIZE)-1:0]     wr_addr,
-    input  logic [DATA_WIDTH-1:0]                        wr_data,
+    input  logic [$clog2(ARRAY_SIZE)-1:0]                wr_addr,
+    input  logic [ARRAY_SIZE*DATA_WIDTH-1:0]             wr_data,
 
     // Weight read — one full row per cycle from active bank (1-cycle latency)
     input  logic [$clog2(ARRAY_SIZE)-1:0]                rd_weight_row,
@@ -43,8 +43,9 @@ module scratchpad #(
 
     // ------------------------------------------------------------------
     // Row-wide SRAM organization.
-    // Each memory word stores one complete ARRAY_SIZE-byte row.  Byte masks
-    // preserve the existing host/DMA interface, which writes one byte/cycle.
+    // Each memory word stores one complete ARRAY_SIZE-byte row.  The generated
+    // fakeram in this flow is 32 bits wide, so each logical row is striped
+    // across four 32-bit SRAM lane macros.
     // ------------------------------------------------------------------
     localparam int BYTES_PER_LANE = 4;
     localparam int LANE_COUNT     = ARRAY_SIZE / BYTES_PER_LANE;
@@ -52,34 +53,13 @@ module scratchpad #(
     localparam int SRAM_ROWS      = 64;  // Smallest 32-bit-wide fakeram size this flow generates.
     localparam int SRAM_ADDR_W    = $clog2(SRAM_ROWS);
     localparam int ROW_ADDR_W     = $clog2(ARRAY_SIZE);
-    localparam int LANE_ADDR_W    = (LANE_COUNT > 1) ? $clog2(LANE_COUNT) : 1;
-    localparam int BYTE_ADDR_W    = $clog2(BYTES_PER_LANE);
-    localparam int TILE_ADDR_W    = $clog2(ARRAY_SIZE * ARRAY_SIZE);
-
-    logic [ROW_ADDR_W-1:0] wr_row;
-    logic [ROW_ADDR_W-1:0] wr_col;
-    logic [LANE_ADDR_W-1:0] wr_lane;
-    logic [BYTE_ADDR_W-1:0] wr_byte;
-    logic [LANE_WIDTH-1:0]  wr_lane_data;
     logic [SRAM_ADDR_W-1:0] wr_sram_addr;
     logic [SRAM_ADDR_W-1:0] rd_weight_sram_addr;
     logic [SRAM_ADDR_W-1:0] rd_act_sram_addr;
 
-    assign wr_row             = wr_addr[TILE_ADDR_W-1 -: ROW_ADDR_W];
-    assign wr_col             = wr_addr[ROW_ADDR_W-1:0];
-    assign wr_byte            = wr_col[BYTE_ADDR_W-1:0];
-    assign wr_lane_data       = {BYTES_PER_LANE{wr_data}};
-    assign wr_sram_addr       = {{(SRAM_ADDR_W-ROW_ADDR_W){1'b0}}, wr_row};
+    assign wr_sram_addr        = {{(SRAM_ADDR_W-ROW_ADDR_W){1'b0}}, wr_addr};
     assign rd_weight_sram_addr = {{(SRAM_ADDR_W-ROW_ADDR_W){1'b0}}, rd_weight_row};
     assign rd_act_sram_addr    = {{(SRAM_ADDR_W-ROW_ADDR_W){1'b0}}, rd_act_row};
-
-    generate
-        if (LANE_COUNT == 1) begin : single_lane_addr
-            assign wr_lane = '0;
-        end else begin : multi_lane_addr
-            assign wr_lane = wr_col[ROW_ADDR_W-1:BYTE_ADDR_W];
-        end
-    endgenerate
 
     logic [LANE_WIDTH-1:0]       weight_rdata [NUM_BANKS][LANE_COUNT];
     logic [LANE_WIDTH-1:0]       act_rdata    [NUM_BANKS][LANE_COUNT];
@@ -107,10 +87,12 @@ module scratchpad #(
         end
 
         if (wr_en) begin
-            if (!wr_type)
-                weight_wmask[inactive_bank][wr_lane][wr_byte] = 1'b1;
-            else
-                act_wmask[inactive_bank][wr_lane][wr_byte] = 1'b1;
+            for (int l = 0; l < LANE_COUNT; l++) begin
+                if (!wr_type)
+                    weight_wmask[inactive_bank][l] = '1;
+                else
+                    act_wmask[inactive_bank][l] = '1;
+            end
         end
     end
 
@@ -144,27 +126,31 @@ module scratchpad #(
                     act_w_r[bi][li]        <= 1'b0;
                     weight_addr_r[bi][li]  <= rd_weight_sram_addr;
                     act_addr_r[bi][li]     <= rd_act_sram_addr;
-                    weight_wdata_r[bi][li] <= wr_lane_data;
-                    act_wdata_r[bi][li]    <= wr_lane_data;
+                    weight_wdata_r[bi][li] <= wr_data[li*LANE_WIDTH +: LANE_WIDTH];
+                    act_wdata_r[bi][li]    <= wr_data[li*LANE_WIDTH +: LANE_WIDTH];
                     weight_wmask_r[bi][li] <= '0;
                     act_wmask_r[bi][li]    <= '0;
                 end
             end
 
             if (wr_en && !wr_type) begin
-                weight_v_r[inactive_bank][wr_lane]     <= 1'b1;
-                weight_w_r[inactive_bank][wr_lane]     <= 1'b1;
-                weight_addr_r[inactive_bank][wr_lane]  <= wr_sram_addr;
-                weight_wdata_r[inactive_bank][wr_lane] <= wr_lane_data;
-                weight_wmask_r[inactive_bank][wr_lane] <= weight_wmask[inactive_bank][wr_lane];
+                for (int li = 0; li < LANE_COUNT; li++) begin
+                    weight_v_r[inactive_bank][li]     <= 1'b1;
+                    weight_w_r[inactive_bank][li]     <= 1'b1;
+                    weight_addr_r[inactive_bank][li]  <= wr_sram_addr;
+                    weight_wdata_r[inactive_bank][li] <= wr_data[li*LANE_WIDTH +: LANE_WIDTH];
+                    weight_wmask_r[inactive_bank][li] <= weight_wmask[inactive_bank][li];
+                end
             end
 
             if (wr_en && wr_type) begin
-                act_v_r[inactive_bank][wr_lane]     <= 1'b1;
-                act_w_r[inactive_bank][wr_lane]     <= 1'b1;
-                act_addr_r[inactive_bank][wr_lane]  <= wr_sram_addr;
-                act_wdata_r[inactive_bank][wr_lane] <= wr_lane_data;
-                act_wmask_r[inactive_bank][wr_lane] <= act_wmask[inactive_bank][wr_lane];
+                for (int li = 0; li < LANE_COUNT; li++) begin
+                    act_v_r[inactive_bank][li]     <= 1'b1;
+                    act_w_r[inactive_bank][li]     <= 1'b1;
+                    act_addr_r[inactive_bank][li]  <= wr_sram_addr;
+                    act_wdata_r[inactive_bank][li] <= wr_data[li*LANE_WIDTH +: LANE_WIDTH];
+                    act_wmask_r[inactive_bank][li] <= act_wmask[inactive_bank][li];
+                end
             end
         end
     end

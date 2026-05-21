@@ -10,17 +10,17 @@ module dma_ctrl #(
     input  logic  start,
     output logic  done,
 
-    // Host write port — host feeds tile data while DMA is in LOAD_* states
+    // Host write port — host feeds one complete ARRAY_SIZE-byte row per cycle.
     input  logic                                         host_wr_en,
-    input  logic [$clog2(ARRAY_SIZE*ARRAY_SIZE)-1:0]     host_wr_addr,
-    input  logic [DATA_WIDTH-1:0]                        host_wr_data,
+    input  logic [$clog2(ARRAY_SIZE)-1:0]                host_wr_addr,
+    input  logic [ARRAY_SIZE*DATA_WIDTH-1:0]             host_wr_data,
     output logic                                         host_wr_rdy,
 
     // Scratchpad write port
     output logic                                         sp_wr_en,
     output logic                                         sp_wr_type,    // 0=weight  1=activation
-    output logic [$clog2(ARRAY_SIZE*ARRAY_SIZE)-1:0]     sp_wr_addr,
-    output logic [DATA_WIDTH-1:0]                        sp_wr_data,
+    output logic [$clog2(ARRAY_SIZE)-1:0]                sp_wr_addr,
+    output logic [ARRAY_SIZE*DATA_WIDTH-1:0]             sp_wr_data,
 
     // Scratchpad read control
     output logic [$clog2(ARRAY_SIZE)-1:0]                sp_rd_weight_row,
@@ -51,8 +51,6 @@ module dma_ctrl #(
     // ------------------------------------------------------------------
     // Local constants
     // ------------------------------------------------------------------
-    localparam int TILE_WORDS = ARRAY_SIZE * ARRAY_SIZE;
-    localparam int ADDR_W     = $clog2(TILE_WORDS);
     localparam int ROW_W      = $clog2(ARRAY_SIZE);
     // DRAIN covers the post-compute array/output-buffer pipeline. The PE has a
     // registered activation operand plus multiply/accumulate stages, and the
@@ -62,7 +60,7 @@ module dma_ctrl #(
     // ------------------------------------------------------------------
     // Counters
     // ------------------------------------------------------------------
-    logic [ADDR_W-1:0]   word_cnt_r;   // words received in LOAD_WEIGHTS / LOAD_ACTS
+    logic [ROW_W-1:0]    row_cnt_r;    // rows received in LOAD_WEIGHTS / LOAD_ACTS
     logic [PHASE_W-1:0]  phase_cnt_r;  // cycles elapsed in PRELOAD_PE / COMPUTE / DRAIN
 
     // ------------------------------------------------------------------
@@ -80,8 +78,8 @@ module dma_ctrl #(
         state_next = state_r;
         case (state_r)
             IDLE:         if (start)                                                        state_next = LOAD_WEIGHTS;
-            LOAD_WEIGHTS: if (host_wr_en && word_cnt_r == ADDR_W'(TILE_WORDS - 1))         state_next = LOAD_ACTS;
-            LOAD_ACTS:    if (host_wr_en && word_cnt_r == ADDR_W'(TILE_WORDS - 1))         state_next = PRELOAD_PE;
+            LOAD_WEIGHTS: if (host_wr_en && row_cnt_r == ROW_W'(ARRAY_SIZE - 1))           state_next = LOAD_ACTS;
+            LOAD_ACTS:    if (host_wr_en && row_cnt_r == ROW_W'(ARRAY_SIZE - 1))           state_next = PRELOAD_PE;
             PRELOAD_PE:   if (phase_cnt_r == PHASE_W'(ARRAY_SIZE))                         state_next = COMPUTE;
             COMPUTE:      if (phase_cnt_r == PHASE_W'(ARRAY_SIZE))                         state_next = DRAIN;
             DRAIN:        if (phase_cnt_r == PHASE_W'(3 * ARRAY_SIZE))                     state_next = ACCUMULATE;
@@ -96,26 +94,26 @@ module dma_ctrl #(
     // ------------------------------------------------------------------
     always_ff @(posedge clk) begin
         if (!rst_n) begin
-            word_cnt_r  <= '0;
+            row_cnt_r   <= '0;
             phase_cnt_r <= '0;
         end else begin
             case (state_r)
                 LOAD_WEIGHTS, LOAD_ACTS: begin
                     if (host_wr_en) begin
-                        if (word_cnt_r == ADDR_W'(TILE_WORDS - 1)) word_cnt_r <= '0;
-                        else                                        word_cnt_r <= word_cnt_r + 1'b1;
+                        if (row_cnt_r == ROW_W'(ARRAY_SIZE - 1)) row_cnt_r <= '0;
+                        else                                      row_cnt_r <= row_cnt_r + 1'b1;
                     end
                     phase_cnt_r <= '0;
                 end
 
                 PRELOAD_PE, COMPUTE, DRAIN: begin
-                    word_cnt_r <= '0;
+                    row_cnt_r <= '0;
                     if (state_next != state_r) phase_cnt_r <= '0;
                     else                       phase_cnt_r <= phase_cnt_r + 1'b1;
                 end
 
                 default: begin
-                    word_cnt_r  <= '0;
+                    row_cnt_r   <= '0;
                     phase_cnt_r <= '0;
                 end
             endcase
@@ -137,7 +135,7 @@ module dma_ctrl #(
     // Swap takes effect on the next edge — active bank is ready for PRELOAD_PE
     assign sp_bank_swap = (state_r == LOAD_ACTS) &&
                           host_wr_en             &&
-                          (word_cnt_r == ADDR_W'(TILE_WORDS - 1));
+                          (row_cnt_r == ROW_W'(ARRAY_SIZE - 1));
 
     // ------------------------------------------------------------------
     // Weight preload read address

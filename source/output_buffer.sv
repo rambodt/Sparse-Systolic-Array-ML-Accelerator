@@ -24,9 +24,11 @@ module output_buffer #(
     // Partial sums from array_top bottom row
     input  logic [ACC_WIDTH-1:0]            psum_in [ARRAY_SIZE],
 
-    // Read port — host reads one element at a time after done
+    // Read port — host can read one complete row after done. The scalar rd_data
+    // port is kept for compatibility with older tests.
     input  logic [$clog2(ARRAY_SIZE)-1:0]   rd_row,
     input  logic [$clog2(ARRAY_SIZE)-1:0]   rd_col,
+    output logic [ARRAY_SIZE*ACC_WIDTH-1:0] rd_row_data,
     output logic [ACC_WIDTH-1:0]            rd_data
 );
 
@@ -59,6 +61,9 @@ module output_buffer #(
 
     logic                 acc_req_valid [ARRAY_SIZE];
     logic [ROW_W-1:0]     acc_req_row   [ARRAY_SIZE];
+    logic                 acc_req_valid_r [ARRAY_SIZE];
+    logic [ROW_W-1:0]     acc_req_row_r   [ARRAY_SIZE];
+    logic [ACC_WIDTH-1:0] acc_req_psum_r  [ARRAY_SIZE];
     logic                 acc_a_valid_r [ARRAY_SIZE];
     logic [ROW_W-1:0]     acc_a_row_r   [ARRAY_SIZE];
     logic [ACC_WIDTH-1:0] acc_a_old_r   [ARRAY_SIZE];
@@ -141,6 +146,9 @@ module output_buffer #(
             for (int c = 0; c < ARRAY_SIZE; c++) begin
                 col_active_r[c] <= 1'b0;
                 col_row_r[c]    <= '0;
+                acc_req_valid_r[c] <= 1'b0;
+                acc_req_row_r[c]   <= '0;
+                acc_req_psum_r[c]  <= '0;
                 acc_a_valid_r[c] <= 1'b0;
                 acc_a_row_r[c]   <= '0;
                 acc_a_old_r[c]   <= '0;
@@ -166,6 +174,10 @@ module output_buffer #(
                     );
                 end
 
+                acc_req_valid_r[c] <= acc_req_valid[c];
+                acc_req_row_r[c]   <= acc_req_row[c];
+                acc_req_psum_r[c]  <= psum_pipe_r[c];
+
                 acc_b_valid_r[c]  <= acc_a_valid_r[c];
                 acc_b_row_r[c]    <= acc_a_row_r[c];
                 acc_b_lo_sum_r[c] <= {1'b0, acc_a_old_r[c][ACC_LO_W-1:0]} +
@@ -173,10 +185,10 @@ module output_buffer #(
                 acc_b_old_hi_r[c] <= acc_a_old_r[c][ACC_WIDTH-1:ACC_LO_W];
                 acc_b_psum_hi_r[c] <= acc_a_psum_r[c][ACC_WIDTH-1:ACC_LO_W];
 
-                acc_a_valid_r[c] <= acc_req_valid[c];
-                acc_a_row_r[c]   <= acc_req_row[c];
-                acc_a_old_r[c]   <= buf_r[acc_req_row[c]][c];
-                acc_a_psum_r[c]  <= psum_pipe_r[c];
+                acc_a_valid_r[c] <= acc_req_valid_r[c];
+                acc_a_row_r[c]   <= acc_req_row_r[c];
+                acc_a_old_r[c]   <= buf_r[acc_req_row_r[c]][c];
+                acc_a_psum_r[c]  <= acc_req_psum_r[c];
 
                 if (acc_req_valid[c] && (acc_req_row[c] == '0)) begin
                     if (ARRAY_SIZE > 1) begin
@@ -239,6 +251,7 @@ module output_buffer #(
             rd_col_rr <= '0;
             rd_col_rrr <= '0;
             rd_data <= '0;
+            rd_row_data <= '0;
             for (int g = 0; g < RD_GROUPS; g++)
                 for (int c = 0; c < ARRAY_SIZE; c++)
                     rd_group_data_r[g][c] <= '0;
@@ -263,6 +276,9 @@ module output_buffer #(
 
             for (int c = 0; c < ARRAY_SIZE; c++)
                 rd_row_data_r[c] <= rd_group_data_r[rd_group_rr][c];
+
+            for (int c = 0; c < ARRAY_SIZE; c++)
+                rd_row_data[c*ACC_WIDTH +: ACC_WIDTH] <= rd_row_data_r[c];
 
             rd_data <= rd_row_data_r[rd_col_rrr];
         end

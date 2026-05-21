@@ -6,15 +6,13 @@ module scratchpad_tb;
     localparam int DATA_WIDTH       = 8;
     localparam int SCRATCHPAD_DEPTH = 256;
     localparam int NUM_BANKS        = 2;
-    localparam int TILE_WORDS       = ARRAY_SIZE * ARRAY_SIZE;
-    localparam int ADDR_W           = $clog2(TILE_WORDS);
     localparam int ROW_W            = $clog2(ARRAY_SIZE);
 
     // ------------------------------------------------------------------ ports
     logic                   clk, rst_n, bank_swap;
     logic                   wr_en, wr_type;
-    logic [ADDR_W-1:0]      wr_addr;
-    logic [DATA_WIDTH-1:0]  wr_data;
+    logic [ROW_W-1:0]       wr_addr;
+    logic [ARRAY_SIZE*DATA_WIDTH-1:0] wr_data;
     logic [ROW_W-1:0]       rd_weight_row, rd_act_row;
     logic [DATA_WIDTH-1:0]  rd_weight_data [ARRAY_SIZE];
     logic [DATA_WIDTH-1:0]  rd_act_data    [ARRAY_SIZE];
@@ -60,21 +58,19 @@ module scratchpad_tb;
         end
     endtask
 
-    // Write one full tile (ARRAY_SIZE×ARRAY_SIZE words) to the inactive bank.
+    // Write one full tile to the inactive bank, one ARRAY_SIZE-byte row/cycle.
     // wr_type: 0=weight  1=activation
-    // data[row][col] → addr = row*ARRAY_SIZE + col
     task write_tile(
         input logic [DATA_WIDTH-1:0] data [ARRAY_SIZE][ARRAY_SIZE],
         input logic                  wtype
     );
         for (int r = 0; r < ARRAY_SIZE; r++) begin
-            for (int c = 0; c < ARRAY_SIZE; c++) begin
-                wr_en   = 1;
-                wr_type = wtype;
-                wr_addr = ADDR_W'(r * ARRAY_SIZE + c);
-                wr_data = data[r][c];
-                @(posedge clk); #1;
-            end
+            wr_en   = 1;
+            wr_type = wtype;
+            wr_addr = ROW_W'(r);
+            for (int c = 0; c < ARRAY_SIZE; c++)
+                wr_data[c*DATA_WIDTH +: DATA_WIDTH] = data[r][c];
+            @(posedge clk); #1;
         end
         wr_en = 0;
     endtask
@@ -170,7 +166,7 @@ module scratchpad_tb;
         wr_en   = 1;
         wr_type = 1'b1;
         wr_addr = '0;
-        wr_data = 8'hFF;
+        wr_data = {ARRAY_SIZE{8'hFF}};
         @(posedge clk); #1;    // write and read address presented simultaneously
         wr_en = 0;
         @(posedge clk); #1;    // read data settled
@@ -202,7 +198,8 @@ module scratchpad_tb;
         wr_en   = 1;
         wr_type = 1'b0;
         wr_addr = '0;
-        wr_data = W2[0][0];
+        for (int c = 0; c < ARRAY_SIZE; c++)
+            wr_data[c*DATA_WIDTH +: DATA_WIDTH] = W2[0][c];
         @(posedge clk); #1;   // both issued in same cycle
         wr_en = 0;
         @(posedge clk); #1;   // read settles
@@ -214,13 +211,13 @@ module scratchpad_tb;
 
         // Finish writing W2 to inactive and swap
         wr_en = 1;
-        for (int r = 0; r < ARRAY_SIZE; r++)
-            for (int c = 0; c < ARRAY_SIZE; c++) begin
-                if (r == 0 && c == 0) continue;   // already written above
-                wr_addr = ADDR_W'(r * ARRAY_SIZE + c);
-                wr_data = W2[r][c];
-                @(posedge clk); #1;
-            end
+        wr_type = 1'b0;
+        for (int r = 1; r < ARRAY_SIZE; r++) begin
+            wr_addr = ROW_W'(r);
+            for (int c = 0; c < ARRAY_SIZE; c++)
+                wr_data[c*DATA_WIDTH +: DATA_WIDTH] = W2[r][c];
+            @(posedge clk); #1;
+        end
         wr_en = 0;
 
         bank_swap = 1; @(posedge clk); #1; bank_swap = 0;

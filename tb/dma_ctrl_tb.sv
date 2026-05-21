@@ -1,13 +1,13 @@
 `timescale 1ns/1ps
 
-// Timing reference (ARRAY_SIZE=4, TILE_WORDS=16):
-//   LOAD_WEIGHTS : 16 host writes
-//   LOAD_ACTS    : 16 host writes; sp_bank_swap fires on the last one
+// Timing reference (ARRAY_SIZE=4):
+//   LOAD_WEIGHTS : 4 row writes
+//   LOAD_ACTS    : 4 row writes; sp_bank_swap fires on the last one
 //   PRELOAD_PE   : ARRAY_SIZE+1 cycles (phase 0..ARRAY_SIZE)
 //                  phase 0         : weight_load_en=0, rd_weight_row=ARRAY_SIZE-1
 //                  phase 1..N      : weight_load_en=1, rd_weight_row counts down
 //   COMPUTE      : ARRAY_SIZE+1 cycles (same latency pattern for activations)
-//   DRAIN        : 2*ARRAY_SIZE-1 cycles; all enables low
+//   DRAIN        : 3*ARRAY_SIZE cycles; all enables low
 //   ACCUMULATE   : 1 cycle; done=0
 //   DONE         : 1 cycle; done=1  -> IDLE
 
@@ -16,18 +16,16 @@ module dma_ctrl_tb;
     localparam int ARRAY_SIZE = 4;
     localparam int DATA_WIDTH = 8;
     localparam int ACC_WIDTH  = 32;
-    localparam int TILE_WORDS = ARRAY_SIZE * ARRAY_SIZE;  // 16
-    localparam int ADDR_W     = $clog2(TILE_WORDS);       // 4
     localparam int ROW_W      = $clog2(ARRAY_SIZE);       // 2
 
     // ------------------------------------------------------------------ ports
     logic                   clk, rst_n, start, done;
     logic                   host_wr_en, host_wr_rdy;
-    logic [ADDR_W-1:0]      host_wr_addr;
-    logic [DATA_WIDTH-1:0]  host_wr_data;
+    logic [ROW_W-1:0]       host_wr_addr;
+    logic [ARRAY_SIZE*DATA_WIDTH-1:0] host_wr_data;
     logic                   sp_wr_en, sp_wr_type, sp_bank_swap;
-    logic [ADDR_W-1:0]      sp_wr_addr;
-    logic [DATA_WIDTH-1:0]  sp_wr_data;
+    logic [ROW_W-1:0]       sp_wr_addr;
+    logic [ARRAY_SIZE*DATA_WIDTH-1:0] sp_wr_data;
     logic [ROW_W-1:0]       sp_rd_weight_row, sp_rd_act_row;
     logic                   weight_load_en, act_col_vld;
 
@@ -71,8 +69,7 @@ module dma_ctrl_tb;
 
     // ------------------------------------------------------------------
     initial begin
-        $display("=== dma_ctrl testbench  ARRAY_SIZE=%0d  TILE_WORDS=%0d ===",
-                 ARRAY_SIZE, TILE_WORDS);
+        $display("=== dma_ctrl testbench  ARRAY_SIZE=%0d ===", ARRAY_SIZE);
         apply_reset();
 
         // ----------------------------------------------------------------
@@ -104,7 +101,7 @@ module dma_ctrl_tb;
         // 4. LOAD_WEIGHTS: sp_wr_en mirrors host_wr_en; sp_wr_type forced to 0
         // ----------------------------------------------------------------
         // Drive host_wr_en=1, clock, then check after settling (#1)
-        host_wr_en = 1; host_wr_addr = '0; host_wr_data = 8'hAA;
+        host_wr_en = 1; host_wr_addr = '0; host_wr_data = {ARRAY_SIZE{8'hAA}};
         @(posedge clk); #1;
         check("LOAD_WEIGHTS: sp_wr_en=1 (host_wr_en=1)", sp_wr_en,  1'b1);
         check("LOAD_WEIGHTS: sp_wr_type=0 (weight)",      sp_wr_type, 1'b0);
@@ -112,16 +109,16 @@ module dma_ctrl_tb;
         host_wr_en = 0; @(posedge clk); #1;
         check("LOAD_WEIGHTS: sp_wr_en=0 (host_wr_en=0)", sp_wr_en, 1'b0);
 
-        // Write remaining TILE_WORDS-2 words (first was above; last handled below)
-        for (int i = 1; i < TILE_WORDS - 1; i++) begin
-            host_wr_en = 1; host_wr_addr = ADDR_W'(i); host_wr_data = DATA_WIDTH'(i);
+        // Write remaining ARRAY_SIZE-2 rows (first was above; last handled below)
+        for (int i = 1; i < ARRAY_SIZE - 1; i++) begin
+            host_wr_en = 1; host_wr_addr = ROW_W'(i); host_wr_data = {ARRAY_SIZE{DATA_WIDTH'(i)}};
             @(posedge clk); #1; host_wr_en = 0;
         end
 
         // ----------------------------------------------------------------
         // 5. Last write of LOAD_WEIGHTS → no bank_swap, transitions to LOAD_ACTS
         // ----------------------------------------------------------------
-        host_wr_en = 1; host_wr_addr = ADDR_W'(TILE_WORDS-1); host_wr_data = 8'hBB;
+        host_wr_en = 1; host_wr_addr = ROW_W'(ARRAY_SIZE-1); host_wr_data = {ARRAY_SIZE{8'hBB}};
         check("LOAD_WEIGHTS last: sp_bank_swap=0 (swap only on LOAD_ACTS)", sp_bank_swap, 1'b0);
         @(posedge clk); #1; host_wr_en = 0;
 
@@ -131,21 +128,21 @@ module dma_ctrl_tb;
         // ----------------------------------------------------------------
         // 6. LOAD_ACTS: sp_wr_type=1 for all writes
         // ----------------------------------------------------------------
-        host_wr_en = 1; host_wr_addr = '0; host_wr_data = 8'hCC;
+        host_wr_en = 1; host_wr_addr = '0; host_wr_data = {ARRAY_SIZE{8'hCC}};
         check("LOAD_ACTS first: sp_wr_type=1",    sp_wr_type,   1'b1);
         check("LOAD_ACTS first: sp_bank_swap=0",  sp_bank_swap, 1'b0);
         @(posedge clk); #1; host_wr_en = 0;
 
-        // Write remaining TILE_WORDS-2 words
-        for (int i = 1; i < TILE_WORDS - 1; i++) begin
-            host_wr_en = 1; host_wr_addr = ADDR_W'(i); host_wr_data = DATA_WIDTH'(i + 20);
+        // Write remaining ARRAY_SIZE-2 rows
+        for (int i = 1; i < ARRAY_SIZE - 1; i++) begin
+            host_wr_en = 1; host_wr_addr = ROW_W'(i); host_wr_data = {ARRAY_SIZE{DATA_WIDTH'(i + 20)}};
             @(posedge clk); #1; host_wr_en = 0;
         end
 
         // ----------------------------------------------------------------
         // 7. Last write of LOAD_ACTS → sp_bank_swap=1 (combinational, before clock)
         // ----------------------------------------------------------------
-        host_wr_en = 1; host_wr_addr = ADDR_W'(TILE_WORDS-1); host_wr_data = 8'hDD;
+        host_wr_en = 1; host_wr_addr = ROW_W'(ARRAY_SIZE-1); host_wr_data = {ARRAY_SIZE{8'hDD}};
         check("LOAD_ACTS last: sp_bank_swap=1", sp_bank_swap, 1'b1);
         check("LOAD_ACTS last: sp_wr_type=1",   sp_wr_type,   1'b1);
         @(posedge clk); #1; host_wr_en = 0;
@@ -199,14 +196,14 @@ module dma_ctrl_tb;
         @(posedge clk); #1;
 
         // ----------------------------------------------------------------
-        // 10. DRAIN: all enables low, runs 2*ARRAY_SIZE-1 cycles
+        // 10. DRAIN: all enables low, runs 3*ARRAY_SIZE cycles
         // ----------------------------------------------------------------
         check("DRAIN entry: act_col_vld=0",    act_col_vld,    1'b0);
         check("DRAIN entry: weight_load_en=0", weight_load_en, 1'b0);
         check("DRAIN entry: host_wr_rdy=0",    host_wr_rdy,    1'b0);
 
         // Clock through remaining DRAIN cycles (already checked cycle 0 above)
-        for (int i = 1; i < 2 * ARRAY_SIZE - 1; i++) @(posedge clk);
+        for (int i = 1; i <= 3 * ARRAY_SIZE; i++) @(posedge clk);
         #1;
         check("DRAIN last: act_col_vld=0",    act_col_vld,    1'b0);
         check("DRAIN last: weight_load_en=0", weight_load_en, 1'b0);

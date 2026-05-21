@@ -1,7 +1,10 @@
 # Matrix-Multiply Benchmarks
 
 These benchmarks compare large square matrix multiplication against the
-accelerator by tiling the workload into 16x16 accelerator tile products.
+accelerator by tiling the workload into 16x16 accelerator tile products. The
+current accelerator interface loads each 16-byte tile row in one cycle, keeps
+partial sums in the output buffer across the K-tile loop, then reads each final
+16x16 output tile one row at a time.
 
 Supported matrix sizes:
 
@@ -73,3 +76,19 @@ The accelerator benchmark prints `BENCH_RESULT` lines with:
 
 For the ASIC result, use the printed `cycle_time_ps=5000`, which matches the
 current 5 ns post-route timing closure.
+
+## Current RTL Results
+
+Measured with the 5 ns ASIC timing estimate:
+
+| Size | Mode | Tile runs | Accelerator cycles | End-to-end cycles | Accel GMAC/s | End-to-end GMAC/s |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| 64x64 | dense | 64 | 7,793 | 9,857 | 6.728 | 5.319 |
+| 128x128 | dense | 512 | 62,401 | 70,657 | 6.722 | 5.936 |
+| 256x256 | dense | 4,096 | 499,457 | 532,481 | 6.718 | 6.302 |
+
+Compared with the older byte-write plus host-side partial-accumulation
+benchmark, the 128x128 dense case improved from `988161` to `147457`
+end-to-end cycles after row writes/on-chip accumulation, then to `70657`
+cycles after row-wide output reads. Overall, that is about `13.99x` faster
+than the original benchmark.

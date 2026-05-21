@@ -4,7 +4,7 @@
 // Flow per test:
 //   1. Assert start (clears output buffer, DMA → LOAD_WEIGHTS)
 //   2. write_tile(B) — stream weight words while host_wr_rdy=1
-//   3. write_tile(A) — stream activation words (DMA auto-transitions after TILE_WORDS writes)
+//   3. write_tile(A) — stream activation rows
 //   4. DMA runs PRELOAD_PE → COMPUTE → DRAIN → ACCUMULATE → DONE autonomously
 //   5. Poll done, then read output buffer and compare to golden C = A×B
 
@@ -15,17 +15,16 @@ module accel_top_tb;
     localparam int ARRAY_SIZE = 16;
     localparam int DATA_WIDTH = 8;
     localparam int ACC_WIDTH  = 32;
-    localparam int TILE_WORDS = ARRAY_SIZE * ARRAY_SIZE;   // 256
-    localparam int ADDR_W     = $clog2(TILE_WORDS);        // 8
     localparam int ROW_W      = $clog2(ARRAY_SIZE);        // 4
     localparam time TB_SAMPLE_DELAY = 2000ps;
 
     // ------------------------------------------------------------------ ports
-    logic                   clk, rst_n, start, done;
+    logic                   clk, rst_n, start, clear_accum, done;
     logic                   host_wr_en, host_wr_rdy;
-    logic [ADDR_W-1:0]      host_wr_addr;
-    logic [DATA_WIDTH-1:0]  host_wr_data;
+    logic [ROW_W-1:0]       host_wr_addr;
+    logic [ARRAY_SIZE*DATA_WIDTH-1:0] host_wr_data;
     logic [ROW_W-1:0]       rd_row, rd_col;
+    logic [ARRAY_SIZE*ACC_WIDTH-1:0] rd_row_data;
     logic [ACC_WIDTH-1:0]   rd_data;
     logic [31:0]            total_mac_cycles, skipped_mac_cycles;
 
@@ -43,7 +42,7 @@ module accel_top_tb;
 
     // ------------------------------------------------------------------
     task apply_reset();
-        rst_n = 0; start = 0; host_wr_en = 0;
+        rst_n = 0; start = 0; clear_accum = 0; host_wr_en = 0;
         host_wr_addr = '0; host_wr_data = '0;
         rd_row = '0; rd_col = '0;
         repeat (2) @(posedge clk);
@@ -51,20 +50,19 @@ module accel_top_tb;
         @(posedge clk);
     endtask
 
-    // Write TILE_WORDS words back-to-back (host_wr_en stays high throughout).
+    // Write ARRAY_SIZE rows back-to-back (host_wr_en stays high throughout).
     // Waits for host_wr_rdy before starting — safe to call immediately after start.
     // Memory layout: addr = row*ARRAY_SIZE + col → data[row][col]
     task write_tile(input logic [DATA_WIDTH-1:0] data [ARRAY_SIZE][ARRAY_SIZE]);
         while (!host_wr_rdy) begin @(posedge clk); end
         @(negedge clk);
         for (int r = 0; r < ARRAY_SIZE; r++) begin
-            for (int c = 0; c < ARRAY_SIZE; c++) begin
-                host_wr_en   = 1;
-                host_wr_addr = ADDR_W'(r * ARRAY_SIZE + c);
-                host_wr_data = data[r][c];
-                @(posedge clk);
-                @(negedge clk);
-            end
+            host_wr_en   = 1;
+            host_wr_addr = ROW_W'(r);
+            for (int c = 0; c < ARRAY_SIZE; c++)
+                host_wr_data[c*DATA_WIDTH +: DATA_WIDTH] = data[r][c];
+            @(posedge clk);
+            @(negedge clk);
         end
         host_wr_en = 0;
     endtask
@@ -124,10 +122,12 @@ module accel_top_tb;
         input logic [DATA_WIDTH-1:0] A [ARRAY_SIZE][ARRAY_SIZE],
         input logic [DATA_WIDTH-1:0] B [ARRAY_SIZE][ARRAY_SIZE]);
         @(negedge clk);
+        clear_accum = 1;
         start = 1;
         @(posedge clk);
         @(negedge clk);
         start = 0;
+        clear_accum = 0;
         write_tile(B);   // LOAD_WEIGHTS
         write_tile(A);   // LOAD_ACTS
         wait_done(200);

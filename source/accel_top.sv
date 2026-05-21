@@ -10,17 +10,19 @@ module accel_top #(
 
     // Host control
     input  logic  start,
+    input  logic  clear_accum,
     output logic  done,
 
-    // Host tile-write port — feed weight/activation tiles before asserting start
+    // Host tile-write port — one complete 16-byte row per cycle.
     input  logic                                         host_wr_en,
-    input  logic [$clog2(ARRAY_SIZE*ARRAY_SIZE)-1:0]     host_wr_addr,
-    input  logic [DATA_WIDTH-1:0]                        host_wr_data,
+    input  logic [$clog2(ARRAY_SIZE)-1:0]                host_wr_addr,
+    input  logic [ARRAY_SIZE*DATA_WIDTH-1:0]             host_wr_data,
     output logic                                         host_wr_rdy,
 
     // Output buffer read port — valid after done asserts
     input  logic [$clog2(ARRAY_SIZE)-1:0]                rd_row,
     input  logic [$clog2(ARRAY_SIZE)-1:0]                rd_col,
+    output logic [ARRAY_SIZE*ACC_WIDTH-1:0]              rd_row_data,
     output logic [ACC_WIDTH-1:0]                         rd_data,
 
     // Sparsity counters — readable after done asserts
@@ -36,18 +38,21 @@ module accel_top #(
     // control fabric. This gives ASIC timing a full internal cycle instead of
     // closing host input delay plus DMA/scratchpad logic in one cycle.
     logic                                         start_r;
+    logic                                         clear_accum_r;
     logic                                         host_wr_en_r;
-    logic [$clog2(ARRAY_SIZE*ARRAY_SIZE)-1:0]     host_wr_addr_r;
-    logic [DATA_WIDTH-1:0]                        host_wr_data_r;
+    logic [$clog2(ARRAY_SIZE)-1:0]                host_wr_addr_r;
+    logic [ARRAY_SIZE*DATA_WIDTH-1:0]             host_wr_data_r;
 
     always_ff @(posedge clk) begin
         if (!rst_n) begin
             start_r        <= 1'b0;
+            clear_accum_r  <= 1'b0;
             host_wr_en_r   <= 1'b0;
             host_wr_addr_r <= '0;
             host_wr_data_r <= '0;
         end else begin
             start_r        <= start;
+            clear_accum_r  <= clear_accum;
             host_wr_en_r   <= host_wr_en;
             host_wr_addr_r <= host_wr_addr;
             host_wr_data_r <= host_wr_data;
@@ -57,8 +62,8 @@ module accel_top #(
     // DMA → scratchpad (write port)
     logic                                         sp_wr_en;
     logic                                         sp_wr_type;
-    logic [$clog2(ARRAY_SIZE*ARRAY_SIZE)-1:0]     sp_wr_addr;
-    logic [DATA_WIDTH-1:0]                        sp_wr_data;
+    logic [$clog2(ARRAY_SIZE)-1:0]                sp_wr_addr;
+    logic [ARRAY_SIZE*DATA_WIDTH-1:0]             sp_wr_data;
 
     // DMA → scratchpad (read control)
     logic [$clog2(ARRAY_SIZE)-1:0]                sp_rd_weight_row;
@@ -187,7 +192,7 @@ module accel_top #(
 
     // ------------------------------------------------------------------
     // Output accumulation buffer
-    // buf_clear on start pulse so each new GEMM begins with a zeroed buffer
+    // clear_accum lets tiled benchmarks keep partial sums across K tiles.
     // ------------------------------------------------------------------
     output_buffer #(
         .ARRAY_SIZE (ARRAY_SIZE),
@@ -195,11 +200,12 @@ module accel_top #(
     ) u_obuf (
         .clk         (clk),
         .rst_n       (rst_n),
-        .buf_clear   (start_r),
+        .buf_clear   (start_r && clear_accum_r),
         .act_col_vld (act_col_vld_sp),
         .psum_in     (psum_out_row),
         .rd_row      (rd_row),
         .rd_col      (rd_col),
+        .rd_row_data (rd_row_data),
         .rd_data     (rd_data)
     );
 
