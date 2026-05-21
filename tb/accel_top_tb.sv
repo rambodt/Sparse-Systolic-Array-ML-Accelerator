@@ -9,13 +9,16 @@
 //   5. Poll done, then read output buffer and compare to golden C = A×B
 
 module accel_top_tb;
+    timeunit 1ps;
+    timeprecision 1ps;
 
-    localparam int ARRAY_SIZE = 4;
+    localparam int ARRAY_SIZE = 16;
     localparam int DATA_WIDTH = 8;
     localparam int ACC_WIDTH  = 32;
-    localparam int TILE_WORDS = ARRAY_SIZE * ARRAY_SIZE;   // 16
-    localparam int ADDR_W     = $clog2(TILE_WORDS);        // 4
-    localparam int ROW_W      = $clog2(ARRAY_SIZE);        // 2
+    localparam int TILE_WORDS = ARRAY_SIZE * ARRAY_SIZE;   // 256
+    localparam int ADDR_W     = $clog2(TILE_WORDS);        // 8
+    localparam int ROW_W      = $clog2(ARRAY_SIZE);        // 4
+    localparam time TB_SAMPLE_DELAY = 2000ps;
 
     // ------------------------------------------------------------------ ports
     logic                   clk, rst_n, start, done;
@@ -33,7 +36,7 @@ module accel_top_tb;
     ) dut (.*);
 
     initial clk = 0;
-    always #5 clk = ~clk;   // 100 MHz
+    always #2500 clk = ~clk;   // 5 ns period, matching the ASIC constraint
 
     int pass_count = 0;
     int fail_count = 0;
@@ -44,21 +47,23 @@ module accel_top_tb;
         host_wr_addr = '0; host_wr_data = '0;
         rd_row = '0; rd_col = '0;
         repeat (2) @(posedge clk);
-        #1; rst_n = 1;
-        @(posedge clk); #1;
+        @(negedge clk); rst_n = 1;
+        @(posedge clk);
     endtask
 
     // Write TILE_WORDS words back-to-back (host_wr_en stays high throughout).
     // Waits for host_wr_rdy before starting — safe to call immediately after start.
     // Memory layout: addr = row*ARRAY_SIZE + col → data[row][col]
     task write_tile(input logic [DATA_WIDTH-1:0] data [ARRAY_SIZE][ARRAY_SIZE]);
-        while (!host_wr_rdy) begin @(posedge clk); #1; end
+        while (!host_wr_rdy) begin @(posedge clk); end
+        @(negedge clk);
         for (int r = 0; r < ARRAY_SIZE; r++) begin
             for (int c = 0; c < ARRAY_SIZE; c++) begin
                 host_wr_en   = 1;
                 host_wr_addr = ADDR_W'(r * ARRAY_SIZE + c);
                 host_wr_data = data[r][c];
-                @(posedge clk); #1;
+                @(posedge clk);
+                @(negedge clk);
             end
         end
         host_wr_en = 0;
@@ -68,7 +73,7 @@ module accel_top_tb;
     task wait_done(input int timeout);
         for (int i = 0; i < timeout; i++) begin
             if (done) return;
-            @(posedge clk); #1;
+            @(posedge clk);
         end
         $display("FAIL  TIMEOUT: done never asserted after %0d cycles", timeout);
         fail_count++;
@@ -94,9 +99,11 @@ module accel_top_tb;
         for (int r = 0; r < ARRAY_SIZE; r++) begin
             for (int c = 0; c < ARRAY_SIZE; c++) begin
                 automatic logic [ACC_WIDTH-1:0] exp_val = golden(A, B, r, c);
+                @(negedge clk);
                 rd_row = ROW_W'(r);
                 rd_col = ROW_W'(c);
-                #1;   // combinational read settles
+                repeat (5) @(posedge clk);
+                #(TB_SAMPLE_DELAY);   // sample after post-route output delay settles
                 if (rd_data !== exp_val) begin
                     $display("FAIL  %s  C[%0d][%0d]  got=%0d  exp=%0d",
                              test_name, r, c, rd_data, exp_val);
@@ -116,10 +123,16 @@ module accel_top_tb;
         input string                 test_name,
         input logic [DATA_WIDTH-1:0] A [ARRAY_SIZE][ARRAY_SIZE],
         input logic [DATA_WIDTH-1:0] B [ARRAY_SIZE][ARRAY_SIZE]);
-        start = 1; @(posedge clk); #1; start = 0;
+        @(negedge clk);
+        start = 1;
+        @(posedge clk);
+        @(negedge clk);
+        start = 0;
         write_tile(B);   // LOAD_WEIGHTS
         write_tile(A);   // LOAD_ACTS
         wait_done(200);
+        repeat (3 * ARRAY_SIZE) @(posedge clk);
+        #(TB_SAMPLE_DELAY);
         check_result(test_name, A, B);
     endtask
 

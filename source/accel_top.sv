@@ -32,6 +32,28 @@ module accel_top #(
     // Internal wires
     // ------------------------------------------------------------------
 
+    // Register top-level control/data inputs before they drive the internal
+    // control fabric. This gives ASIC timing a full internal cycle instead of
+    // closing host input delay plus DMA/scratchpad logic in one cycle.
+    logic                                         start_r;
+    logic                                         host_wr_en_r;
+    logic [$clog2(ARRAY_SIZE*ARRAY_SIZE)-1:0]     host_wr_addr_r;
+    logic [DATA_WIDTH-1:0]                        host_wr_data_r;
+
+    always_ff @(posedge clk) begin
+        if (!rst_n) begin
+            start_r        <= 1'b0;
+            host_wr_en_r   <= 1'b0;
+            host_wr_addr_r <= '0;
+            host_wr_data_r <= '0;
+        end else begin
+            start_r        <= start;
+            host_wr_en_r   <= host_wr_en;
+            host_wr_addr_r <= host_wr_addr;
+            host_wr_data_r <= host_wr_data;
+        end
+    end
+
     // DMA → scratchpad (write port)
     logic                                         sp_wr_en;
     logic                                         sp_wr_type;
@@ -46,6 +68,8 @@ module accel_top #(
     // DMA → array_top (control)
     logic                                         weight_load_en;
     logic                                         act_col_vld;
+    logic                                         weight_load_en_sp;
+    logic                                         act_col_vld_sp;
 
     // Scratchpad → sparsity_unit (raw activations)
     logic [DATA_WIDTH-1:0]                        sp_act_data    [ARRAY_SIZE];
@@ -71,11 +95,11 @@ module accel_top #(
     ) u_dma (
         .clk             (clk),
         .rst_n           (rst_n),
-        .start           (start),
+        .start           (start_r),
         .done            (done),
-        .host_wr_en      (host_wr_en),
-        .host_wr_addr    (host_wr_addr),
-        .host_wr_data    (host_wr_data),
+        .host_wr_en      (host_wr_en_r),
+        .host_wr_addr    (host_wr_addr_r),
+        .host_wr_data    (host_wr_data_r),
         .host_wr_rdy     (host_wr_rdy),
         .sp_wr_en        (sp_wr_en),
         .sp_wr_type      (sp_wr_type),
@@ -110,6 +134,18 @@ module accel_top #(
         .rd_act_data    (sp_act_data)
     );
 
+    // The scratchpad registers SRAM command pins before the macros, adding
+    // one cycle beyond the synchronous SRAM read latency.
+    always_ff @(posedge clk) begin
+        if (!rst_n) begin
+            weight_load_en_sp <= 1'b0;
+            act_col_vld_sp    <= 1'b0;
+        end else begin
+            weight_load_en_sp <= weight_load_en;
+            act_col_vld_sp    <= act_col_vld;
+        end
+    end
+
     // ------------------------------------------------------------------
     // Sparsity detection unit
     // Sits between scratchpad output and array left-column input.
@@ -121,9 +157,9 @@ module accel_top #(
     ) u_sparsity (
         .clk               (clk),
         .rst_n             (rst_n),
-        .clear             (start),
+        .clear             (start_r),
         .act_in            (sp_act_data),
-        .act_col_vld       (act_col_vld),
+        .act_col_vld       (act_col_vld_sp),
         .act_out           (act_col_in),
         .skip_en_col       (skip_en_col),
         .total_mac_cycles  (total_mac_cycles),
@@ -141,9 +177,9 @@ module accel_top #(
         .clk           (clk),
         .rst_n         (rst_n),
         .act_col_in    (act_col_in),
-        .act_col_vld   (act_col_vld),
+        .act_col_vld   (act_col_vld_sp),
         .weight_load_in(weight_load_in),
-        .weight_load_en(weight_load_en),
+        .weight_load_en(weight_load_en_sp),
         .skip_en_col   (skip_en_col),
         .psum_out_row  (psum_out_row),
         .psum_out_vld  (psum_out_vld)
@@ -159,8 +195,8 @@ module accel_top #(
     ) u_obuf (
         .clk         (clk),
         .rst_n       (rst_n),
-        .buf_clear   (start),
-        .act_col_vld (act_col_vld),
+        .buf_clear   (start_r),
+        .act_col_vld (act_col_vld_sp),
         .psum_in     (psum_out_row),
         .rd_row      (rd_row),
         .rd_col      (rd_col),

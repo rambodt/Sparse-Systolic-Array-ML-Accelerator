@@ -2,7 +2,7 @@
 
 // Timing relationship (derived from pipeline trace):
 //   At streaming tick S (1-indexed from first act_col_in presentation):
-//     psum_out_row[c] = C[t][c]  where  S = t + c + ARRAY_SIZE + 1
+//     psum_out_row[c] = C[t][c]  where  S = t + c + 2*ARRAY_SIZE + 1
 //
 // Weight preload order (reverse rows so shift chain lands correctly):
 //   Preload cycle k (0-indexed):  weight_load_in[col] = B[ARRAY_SIZE-1-k][col]
@@ -15,8 +15,9 @@ module array_top_tb;
     localparam int ACC_WIDTH  = 32;
 
     // Total streaming ticks needed to drain last output:
-    // Last output C[ARRAY_SIZE-1][ARRAY_SIZE-1] at S = (ARRAY_SIZE-1)+(ARRAY_SIZE-1)+ARRAY_SIZE+1 = 3*ARRAY_SIZE-1
-    localparam int TOTAL_TICKS = 3*ARRAY_SIZE - 1;
+    // Last output C[ARRAY_SIZE-1][ARRAY_SIZE-1] at
+    // S = (ARRAY_SIZE-1)+(ARRAY_SIZE-1)+2*ARRAY_SIZE+1 = 4*ARRAY_SIZE-1
+    localparam int TOTAL_TICKS = 4*ARRAY_SIZE - 1;
 
     // ------------------------------------------------------------------ ports
     logic                   clk;
@@ -66,7 +67,7 @@ module array_top_tb;
     endtask
 
     // Stream A and capture full C = A×B result
-    // At tick S (1-indexed): psum_out_row[c] = C[t][c] where S = t+c+ARRAY_SIZE+1
+    // At tick S (1-indexed): psum_out_row[c] = C[t][c] where S = t+c+2*ARRAY_SIZE+1
     task stream_and_capture(
         input  logic [DATA_WIDTH-1:0] A [ARRAY_SIZE][ARRAY_SIZE],
         output logic [ACC_WIDTH-1:0]  C [ARRAY_SIZE][ARRAY_SIZE]
@@ -90,9 +91,9 @@ module array_top_tb;
 
             @(posedge clk); #1;
 
-            // Capture: S = t + c + ARRAY_SIZE + 1 → t = S - c - ARRAY_SIZE - 1
+            // Capture: S = t + c + 2*ARRAY_SIZE + 1 → t = S - c - 2*ARRAY_SIZE - 1
             for (int c = 0; c < ARRAY_SIZE; c++) begin
-                automatic int t = S - c - ARRAY_SIZE - 1;
+                automatic int t = S - c - 2*ARRAY_SIZE - 1;
                 if (t >= 0 && t < ARRAY_SIZE)
                     C[t][c] = psum_out_row[c];
             end

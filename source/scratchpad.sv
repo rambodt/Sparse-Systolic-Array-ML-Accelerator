@@ -52,7 +52,7 @@ module scratchpad #(
     localparam int SRAM_ROWS      = 64;  // Smallest 32-bit-wide fakeram size this flow generates.
     localparam int SRAM_ADDR_W    = $clog2(SRAM_ROWS);
     localparam int ROW_ADDR_W     = $clog2(ARRAY_SIZE);
-    localparam int LANE_ADDR_W    = $clog2(LANE_COUNT);
+    localparam int LANE_ADDR_W    = (LANE_COUNT > 1) ? $clog2(LANE_COUNT) : 1;
     localparam int BYTE_ADDR_W    = $clog2(BYTES_PER_LANE);
     localparam int TILE_ADDR_W    = $clog2(ARRAY_SIZE * ARRAY_SIZE);
 
@@ -67,17 +67,36 @@ module scratchpad #(
 
     assign wr_row             = wr_addr[TILE_ADDR_W-1 -: ROW_ADDR_W];
     assign wr_col             = wr_addr[ROW_ADDR_W-1:0];
-    assign wr_lane            = wr_col[ROW_ADDR_W-1 -: LANE_ADDR_W];
     assign wr_byte            = wr_col[BYTE_ADDR_W-1:0];
     assign wr_lane_data       = {BYTES_PER_LANE{wr_data}};
     assign wr_sram_addr       = {{(SRAM_ADDR_W-ROW_ADDR_W){1'b0}}, wr_row};
     assign rd_weight_sram_addr = {{(SRAM_ADDR_W-ROW_ADDR_W){1'b0}}, rd_weight_row};
     assign rd_act_sram_addr    = {{(SRAM_ADDR_W-ROW_ADDR_W){1'b0}}, rd_act_row};
 
+    generate
+        if (LANE_COUNT == 1) begin : single_lane_addr
+            assign wr_lane = '0;
+        end else begin : multi_lane_addr
+            assign wr_lane = wr_col[ROW_ADDR_W-1:BYTE_ADDR_W];
+        end
+    endgenerate
+
     logic [LANE_WIDTH-1:0]       weight_rdata [NUM_BANKS][LANE_COUNT];
     logic [LANE_WIDTH-1:0]       act_rdata    [NUM_BANKS][LANE_COUNT];
     logic [BYTES_PER_LANE-1:0]   weight_wmask [NUM_BANKS][LANE_COUNT];
     logic [BYTES_PER_LANE-1:0]   act_wmask    [NUM_BANKS][LANE_COUNT];
+    logic                        weight_v_r   [NUM_BANKS][LANE_COUNT];
+    logic                        act_v_r      [NUM_BANKS][LANE_COUNT];
+    logic                        weight_w_r   [NUM_BANKS][LANE_COUNT];
+    logic                        act_w_r      [NUM_BANKS][LANE_COUNT];
+    logic [SRAM_ADDR_W-1:0]      weight_addr_r [NUM_BANKS][LANE_COUNT];
+    logic [SRAM_ADDR_W-1:0]      act_addr_r    [NUM_BANKS][LANE_COUNT];
+    logic [LANE_WIDTH-1:0]       weight_wdata_r[NUM_BANKS][LANE_COUNT];
+    logic [LANE_WIDTH-1:0]       act_wdata_r   [NUM_BANKS][LANE_COUNT];
+    logic [BYTES_PER_LANE-1:0]   weight_wmask_r[NUM_BANKS][LANE_COUNT];
+    logic [BYTES_PER_LANE-1:0]   act_wmask_r   [NUM_BANKS][LANE_COUNT];
+    logic                        active_bank_cmd_r;
+    logic                        active_bank_data_r;
 
     always_comb begin
         for (int b = 0; b < NUM_BANKS; b++) begin
@@ -95,27 +114,76 @@ module scratchpad #(
         end
     end
 
+    always_ff @(posedge clk) begin
+        if (!rst_n) begin
+            active_bank_cmd_r  <= 1'b0;
+            active_bank_data_r <= 1'b0;
+            for (int bi = 0; bi < NUM_BANKS; bi++) begin
+                for (int li = 0; li < LANE_COUNT; li++) begin
+                    weight_v_r[bi][li]     <= 1'b0;
+                    act_v_r[bi][li]        <= 1'b0;
+                    weight_w_r[bi][li]     <= 1'b0;
+                    act_w_r[bi][li]        <= 1'b0;
+                    weight_addr_r[bi][li]  <= '0;
+                    act_addr_r[bi][li]     <= '0;
+                    weight_wdata_r[bi][li] <= '0;
+                    act_wdata_r[bi][li]    <= '0;
+                    weight_wmask_r[bi][li] <= '0;
+                    act_wmask_r[bi][li]    <= '0;
+                end
+            end
+        end else begin
+            active_bank_cmd_r  <= active_bank_r;
+            active_bank_data_r <= active_bank_cmd_r;
+
+            for (int bi = 0; bi < NUM_BANKS; bi++) begin
+                for (int li = 0; li < LANE_COUNT; li++) begin
+                    weight_v_r[bi][li]     <= (active_bank_r == (bi == 1));
+                    act_v_r[bi][li]        <= (active_bank_r == (bi == 1));
+                    weight_w_r[bi][li]     <= 1'b0;
+                    act_w_r[bi][li]        <= 1'b0;
+                    weight_addr_r[bi][li]  <= rd_weight_sram_addr;
+                    act_addr_r[bi][li]     <= rd_act_sram_addr;
+                    weight_wdata_r[bi][li] <= wr_lane_data;
+                    act_wdata_r[bi][li]    <= wr_lane_data;
+                    weight_wmask_r[bi][li] <= '0;
+                    act_wmask_r[bi][li]    <= '0;
+                end
+            end
+
+            if (wr_en && !wr_type) begin
+                weight_v_r[inactive_bank][wr_lane]     <= 1'b1;
+                weight_w_r[inactive_bank][wr_lane]     <= 1'b1;
+                weight_addr_r[inactive_bank][wr_lane]  <= wr_sram_addr;
+                weight_wdata_r[inactive_bank][wr_lane] <= wr_lane_data;
+                weight_wmask_r[inactive_bank][wr_lane] <= weight_wmask[inactive_bank][wr_lane];
+            end
+
+            if (wr_en && wr_type) begin
+                act_v_r[inactive_bank][wr_lane]     <= 1'b1;
+                act_w_r[inactive_bank][wr_lane]     <= 1'b1;
+                act_addr_r[inactive_bank][wr_lane]  <= wr_sram_addr;
+                act_wdata_r[inactive_bank][wr_lane] <= wr_lane_data;
+                act_wmask_r[inactive_bank][wr_lane] <= act_wmask[inactive_bank][wr_lane];
+            end
+        end
+    end
+
     genvar b, l;
     generate
         for (b = 0; b < NUM_BANKS; b++) begin : bank_gen
-            localparam logic BANK_ID = (b == 1);
-
             for (l = 0; l < LANE_COUNT; l++) begin : lane_gen
-                localparam logic [LANE_ADDR_W-1:0] LANE_ID = l;
-
                 bsg_mem_1rw_sync_mask_write_byte #(
                     .data_width_p (LANE_WIDTH),
                     .els_p        (SRAM_ROWS)
                 ) u_weight_mem (
                     .clk_i        (clk),
                     .reset_i      (~rst_n),
-                    .v_i          ((active_bank_r == BANK_ID) ||
-                                   (wr_en && !wr_type && (inactive_bank == BANK_ID) && (wr_lane == LANE_ID))),
-                    .w_i          (wr_en && !wr_type && (inactive_bank == BANK_ID) && (wr_lane == LANE_ID)),
-                    .addr_i       ((wr_en && !wr_type && (inactive_bank == BANK_ID) && (wr_lane == LANE_ID)) ?
-                                   wr_sram_addr : rd_weight_sram_addr),
-                    .data_i       (wr_lane_data),
-                    .write_mask_i (weight_wmask[b][l]),
+                    .v_i          (weight_v_r[b][l]),
+                    .w_i          (weight_w_r[b][l]),
+                    .addr_i       (weight_addr_r[b][l]),
+                    .data_i       (weight_wdata_r[b][l]),
+                    .write_mask_i (weight_wmask_r[b][l]),
                     .data_o       (weight_rdata[b][l])
                 );
 
@@ -125,13 +193,11 @@ module scratchpad #(
                 ) u_act_mem (
                     .clk_i        (clk),
                     .reset_i      (~rst_n),
-                    .v_i          ((active_bank_r == BANK_ID) ||
-                                   (wr_en && wr_type && (inactive_bank == BANK_ID) && (wr_lane == LANE_ID))),
-                    .w_i          (wr_en && wr_type && (inactive_bank == BANK_ID) && (wr_lane == LANE_ID)),
-                    .addr_i       ((wr_en && wr_type && (inactive_bank == BANK_ID) && (wr_lane == LANE_ID)) ?
-                                   wr_sram_addr : rd_act_sram_addr),
-                    .data_i       (wr_lane_data),
-                    .write_mask_i (act_wmask[b][l]),
+                    .v_i          (act_v_r[b][l]),
+                    .w_i          (act_w_r[b][l]),
+                    .addr_i       (act_addr_r[b][l]),
+                    .data_i       (act_wdata_r[b][l]),
+                    .write_mask_i (act_wmask_r[b][l]),
                     .data_o       (act_rdata[b][l])
                 );
             end
@@ -139,7 +205,7 @@ module scratchpad #(
     endgenerate
 
     // ------------------------------------------------------------------
-    // Read: row-wide SRAM data returns one cycle after the read address.
+    // Read: one command register plus synchronous SRAM output latency.
     // ------------------------------------------------------------------
     genvar c;
     generate
@@ -147,8 +213,8 @@ module scratchpad #(
             localparam int LANE = c / BYTES_PER_LANE;
             localparam int BYTE = c % BYTES_PER_LANE;
 
-            assign rd_weight_data[c] = weight_rdata[active_bank_r][LANE][BYTE*DATA_WIDTH +: DATA_WIDTH];
-            assign rd_act_data[c]    = act_rdata[active_bank_r][LANE][BYTE*DATA_WIDTH +: DATA_WIDTH];
+            assign rd_weight_data[c] = weight_rdata[active_bank_data_r][LANE][BYTE*DATA_WIDTH +: DATA_WIDTH];
+            assign rd_act_data[c]    = act_rdata[active_bank_data_r][LANE][BYTE*DATA_WIDTH +: DATA_WIDTH];
         end
     endgenerate
 

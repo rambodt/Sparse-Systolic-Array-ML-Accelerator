@@ -23,12 +23,17 @@ scripts/plots/
 # Hammer / Cadence ASIC flow
 ee477-hammer-cad/
 asic/build/
+asic/build_runs/
 asic/hammer.log
+asic/macro_gds/
+asic/scripts/create_fakeram_gds.py
 asic/output.json
 asic/novas.*
 asic/verdiLog/
+build_runs/
 
 # Claude
 .claude
 
 CONTEXT.md
+coursework_labs_for_tool_reference_only_not relatd_to_project.pdf

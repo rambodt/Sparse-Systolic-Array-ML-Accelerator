@@ -1,5 +1,6 @@
-// skip_en_col[r] must arrive at PE[r] at the same cycle as act_stagger[r],
-// which is r+1 cycles after act_col_in[r] is presented.
+// skip_en_col[r] must arrive at PE[r] at the same cycle as act_stagger[r].
+// With the pipelined PE, row r's activation is staggered by 2*r+1 cycles
+// after act_col_in[r] is presented.
 // This module mirrors the array_top stagger exactly for the zero-detect flag.
 
 module sparsity_unit #(
@@ -35,20 +36,22 @@ module sparsity_unit #(
 
     // ------------------------------------------------------------------
     // Stagger skip_en to match the activation stagger in array_top.
-    // PE[r] receives its activation r+1 cycles after act_col_in[r] is valid.
+    // PE[r] receives its activation 2*r+1 cycles after act_col_in[r] is valid.
     // Structure mirrors array_top's stagger_sr / act_stagger chain exactly:
     //   Row 0: 1 register (skip_staggered[0] <= zero_det[0])
-    //   Row r: r stages in det_sr[r] → 1 final register = r+1 total
+    //   Row r: 2*r stages in det_sr[r] → 1 final register = 2*r+1 total
     // Also resets on clear so stale data cannot corrupt the next GEMM.
     // ------------------------------------------------------------------
-    logic [ARRAY_SIZE-2:0] det_sr [ARRAY_SIZE];
+    localparam int ROW_STAGGER_MAX = (ARRAY_SIZE > 1) ? (2*ARRAY_SIZE - 2) : 1;
+
+    logic [ROW_STAGGER_MAX-1:0] det_sr [ARRAY_SIZE];
     logic [ARRAY_SIZE-1:0] skip_staggered;
 
     always_ff @(posedge clk) begin
         if (!rst_n || clear) begin
             skip_staggered <= '0;
             for (int r = 0; r < ARRAY_SIZE; r++)
-                for (int s = 0; s < ARRAY_SIZE-1; s++)
+                for (int s = 0; s < ROW_STAGGER_MAX; s++)
                     det_sr[r][s] <= '0;
         end else begin
             for (int r = 0; r < ARRAY_SIZE; r++) begin
@@ -56,9 +59,9 @@ module sparsity_unit #(
                     skip_staggered[0] <= zero_det[0];
                 end else begin
                     det_sr[r][0] <= zero_det[r];
-                    for (int s = 1; s < r; s++)
+                    for (int s = 1; s < 2*r; s++)
                         det_sr[r][s] <= det_sr[r][s-1];
-                    skip_staggered[r] <= det_sr[r][r-1];
+                    skip_staggered[r] <= det_sr[r][2*r-1];
                 end
             end
         end
@@ -72,25 +75,57 @@ module sparsity_unit #(
     //   total_mac_cycles   += ARRAY_SIZE every cycle act_col_vld=1
     //   skipped_mac_cycles += (zero count in act_in) every cycle act_col_vld=1
     // ------------------------------------------------------------------
-    logic [$clog2(ARRAY_SIZE+1)-1:0] zero_cnt;
+    logic [31:0] total_r, skipped_r;
+    localparam int PAIR_COUNT = (ARRAY_SIZE + 1) / 2;
+    logic [ARRAY_SIZE-1:0]           zero_det_count_r;
+    logic [1:0]                      zero_pair_cnt_r [PAIR_COUNT];
+    logic [$clog2(ARRAY_SIZE+1)-1:0] zero_cnt_pipe;
+    logic [$clog2(ARRAY_SIZE+1)-1:0] zero_cnt_r;
+    logic                            act_col_vld_r;
+    logic                            zero_pair_vld_r;
+    logic                            zero_cnt_vld_r;
+
     always_comb begin
-        zero_cnt = '0;
-        for (int i = 0; i < ARRAY_SIZE; i++)
-            if (act_in[i] == '0)
-                zero_cnt = zero_cnt + 1'b1;
+        zero_cnt_pipe = '0;
+        for (int p = 0; p < PAIR_COUNT; p++)
+            zero_cnt_pipe = zero_cnt_pipe + zero_pair_cnt_r[p];
     end
 
-    logic [31:0] total_r, skipped_r;
     assign total_mac_cycles   = total_r;
     assign skipped_mac_cycles = skipped_r;
 
     always_ff @(posedge clk) begin
         if (!rst_n || clear) begin
-            total_r   <= '0;
-            skipped_r <= '0;
-        end else if (act_col_vld) begin
-            total_r   <= total_r   + 32'(ARRAY_SIZE);
-            skipped_r <= skipped_r + 32'(zero_cnt);
+            total_r          <= '0;
+            skipped_r        <= '0;
+            zero_det_count_r <= '0;
+            for (int p = 0; p < PAIR_COUNT; p++)
+                zero_pair_cnt_r[p] <= '0;
+            zero_cnt_r       <= '0;
+            act_col_vld_r    <= 1'b0;
+            zero_pair_vld_r  <= 1'b0;
+            zero_cnt_vld_r   <= 1'b0;
+        end else begin
+            zero_det_count_r <= zero_det;
+            act_col_vld_r    <= act_col_vld;
+            zero_pair_vld_r  <= act_col_vld_r;
+            zero_cnt_vld_r   <= zero_pair_vld_r;
+
+            for (int p = 0; p < PAIR_COUNT; p++) begin
+                zero_pair_cnt_r[p] <= 2'(zero_det_count_r[2*p]);
+                if ((2*p + 1) < ARRAY_SIZE)
+                    zero_pair_cnt_r[p] <= 2'(zero_det_count_r[2*p]) + 2'(zero_det_count_r[2*p + 1]);
+            end
+
+            zero_cnt_r <= zero_cnt_pipe;
+
+            if (act_col_vld) begin
+                total_r <= total_r + 32'(ARRAY_SIZE);
+            end
+
+            if (zero_cnt_vld_r) begin
+                skipped_r <= skipped_r + 32'(zero_cnt_r);
+            end
         end
     end
 

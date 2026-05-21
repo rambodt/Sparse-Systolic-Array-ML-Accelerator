@@ -54,8 +54,10 @@ module dma_ctrl #(
     localparam int TILE_WORDS = ARRAY_SIZE * ARRAY_SIZE;
     localparam int ADDR_W     = $clog2(TILE_WORDS);
     localparam int ROW_W      = $clog2(ARRAY_SIZE);
-    // DRAIN needs 2*ARRAY_SIZE-1 cycles → counter reaches 2*ARRAY_SIZE-2
-    localparam int PHASE_W    = $clog2(2 * ARRAY_SIZE) + 1;
+    // DRAIN covers the post-compute array/output-buffer pipeline. The PE has a
+    // registered activation operand plus multiply/accumulate stages, and the
+    // output buffer pipelines the final accumulator write.
+    localparam int PHASE_W    = $clog2(3 * ARRAY_SIZE) + 1;
 
     // ------------------------------------------------------------------
     // Counters
@@ -82,7 +84,7 @@ module dma_ctrl #(
             LOAD_ACTS:    if (host_wr_en && word_cnt_r == ADDR_W'(TILE_WORDS - 1))         state_next = PRELOAD_PE;
             PRELOAD_PE:   if (phase_cnt_r == PHASE_W'(ARRAY_SIZE))                         state_next = COMPUTE;
             COMPUTE:      if (phase_cnt_r == PHASE_W'(ARRAY_SIZE))                         state_next = DRAIN;
-            DRAIN:        if (phase_cnt_r == PHASE_W'(2 * ARRAY_SIZE - 2))                 state_next = ACCUMULATE;
+            DRAIN:        if (phase_cnt_r == PHASE_W'(3 * ARRAY_SIZE))                     state_next = ACCUMULATE;
             ACCUMULATE:                                                                     state_next = DONE;
             DONE:                                                                           state_next = IDLE;
             default:                                                                        state_next = IDLE;

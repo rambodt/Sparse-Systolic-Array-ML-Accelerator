@@ -3,6 +3,9 @@
 sim.inputs.tb_incdir: [
   "../source",
   "../tb",
+  "${bsg_root}/bsg_misc",
+  "${bsg_root}/bsg_mem",
+  "${bsg_root}/hard/fakeram",
 ]
 sim.inputs.tb_incdir_meta: [subst]
 
@@ -10,5 +13,11 @@ sim.inputs.tb_input_files: [
   "../tb/accel_top_tb.sv",
 ]
 sim.inputs.tb_input_files_meta: [append, subst]
+
+sim.inputs.input_files: [
+  "${bsg_root}/bsg_mem/bsg_mem_1rw_sync.v",
+  "${bsg_root}/bsg_mem/bsg_mem_1rw_sync_mask_write_byte.v",
+]
+sim.inputs.input_files_meta: [append, subst]
 
 sim.inputs.trace_files: []

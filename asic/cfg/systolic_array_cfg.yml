@@ -3,6 +3,12 @@
 synthesis.inputs.top_module: "accel_top"
 sim.inputs.tb_name: "accel_top_tb"
 
+# Timing experiment: Genus inferred hundreds of fine-grain clock gates in the
+# output buffer/array. Post-route timing showed the worst setup paths were
+# control-input-to-clock-gate-enable checks, so keep the flops ungated for this
+# 5 ns closure attempt.
+synthesis.clock_gating_mode: empty
+
 # No hardened macros in the first-pass ASIC build. The scratchpad intentionally
 # infers registers until it is replaced with generated SRAM macros.
 synthesis.inputs.preserve_modules: []
@@ -12,6 +18,16 @@ vlsi.inputs.sram_parameters: [
   {name: "fakeram_d64_w32", family: "1rw", depth: 64, width: 32,
    mask: True, mux: 1, vt: ""},
 ]
+
+# Use the generated fakeram LEF/lib/Verilog views only. Do not merge a manual
+# placeholder SRAM GDS: the course flow expects fakeram to LVS as a LEF abstract
+# black box, and merging a fake GDS prevents Magic/ext2spice from preserving the
+# SRAM macro instances correctly.
+#
+# The scratchpad SRAM LEF blocks met5 internally. The default course config only
+# creates route halos through met4, so keep macro blockage spacing active through
+# met5 for top-level routing.
+par.blockage_spacing_top_layer: met5
 
 vlsi.inputs:
   custom_sdc_constraints: []
@@ -36,13 +52,13 @@ vlsi.inputs.placement_constraints:
 
   # Top-left scratchpad macros: bank 0.
   - {path: "TOP/u_scratchpad/bank_gen[0].lane_gen[0].u_act_mem/macro.mem",    type: hardmacro, x: 120, y: 3900, width: 117.760, height: 106.080, orientation: r0}
-  - {path: "TOP/u_scratchpad/bank_gen[0].lane_gen[0].u_weight_mem/macro.mem", type: hardmacro, x: 300, y: 3900, width: 117.760, height: 106.080, orientation: r0}
+  - {path: "TOP/u_scratchpad/bank_gen[0].lane_gen[0].u_weight_mem/macro.mem", type: hardmacro, x: 340, y: 3900, width: 117.760, height: 106.080, orientation: r0}
   - {path: "TOP/u_scratchpad/bank_gen[0].lane_gen[1].u_act_mem/macro.mem",    type: hardmacro, x: 120, y: 4080, width: 117.760, height: 106.080, orientation: r0}
-  - {path: "TOP/u_scratchpad/bank_gen[0].lane_gen[1].u_weight_mem/macro.mem", type: hardmacro, x: 300, y: 4080, width: 117.760, height: 106.080, orientation: r0}
+  - {path: "TOP/u_scratchpad/bank_gen[0].lane_gen[1].u_weight_mem/macro.mem", type: hardmacro, x: 340, y: 4080, width: 117.760, height: 106.080, orientation: r0}
   - {path: "TOP/u_scratchpad/bank_gen[0].lane_gen[2].u_act_mem/macro.mem",    type: hardmacro, x: 120, y: 4260, width: 117.760, height: 106.080, orientation: r0}
-  - {path: "TOP/u_scratchpad/bank_gen[0].lane_gen[2].u_weight_mem/macro.mem", type: hardmacro, x: 300, y: 4260, width: 117.760, height: 106.080, orientation: r0}
+  - {path: "TOP/u_scratchpad/bank_gen[0].lane_gen[2].u_weight_mem/macro.mem", type: hardmacro, x: 340, y: 4260, width: 117.760, height: 106.080, orientation: r0}
   - {path: "TOP/u_scratchpad/bank_gen[0].lane_gen[3].u_act_mem/macro.mem",    type: hardmacro, x: 120, y: 4440, width: 117.760, height: 106.080, orientation: r0}
-  - {path: "TOP/u_scratchpad/bank_gen[0].lane_gen[3].u_weight_mem/macro.mem", type: hardmacro, x: 300, y: 4440, width: 117.760, height: 106.080, orientation: r0}
+  - {path: "TOP/u_scratchpad/bank_gen[0].lane_gen[3].u_weight_mem/macro.mem", type: hardmacro, x: 340, y: 4440, width: 117.760, height: 106.080, orientation: r0}
 
   # Top-right scratchpad macros: bank 1.
   - {path: "TOP/u_scratchpad/bank_gen[1].lane_gen[0].u_act_mem/macro.mem",    type: hardmacro, x: 4560, y: 3900, width: 117.760, height: 106.080, orientation: my}
