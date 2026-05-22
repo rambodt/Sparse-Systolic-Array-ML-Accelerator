@@ -38,8 +38,14 @@ module pe #(
             if (weight_load_en)
                 weight_r <= weight_in;
 
-            // Stage 1: register multiply output and delay control signals
-            mult_r    <= weight_r * act_in;
+            // Stage 1: register multiply output and delay control signals.
+            // Gate the multiplier operands on skipped activations so sparse
+            // inputs reduce datapath switching instead of only bypassing the
+            // accumulator in stage 2.
+            if (skip_en)
+                mult_r <= '0;
+            else
+                mult_r <= weight_r * act_in;
             psum_in_r <= psum_in;
             skip_en_r <= skip_en;
 
