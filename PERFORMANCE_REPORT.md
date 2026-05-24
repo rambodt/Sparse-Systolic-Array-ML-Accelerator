@@ -48,11 +48,19 @@ example processing `1024` token rows with hidden size `768`.
 |---|---:|---|---:|---:|---:|---|
 | Accelerator RTL-derived hardware estimate | `1024x768x768` | dense | `91.914 ms` | `6.571` | `13.142` | `CHECK=sample`, PASS |
 | i9-14900 CPU | `1024x768x768` | dense | `271.169 ms` | `2.227` | `4.455` | `reps=10`, PASS |
+| i5-1335U CPU | `1024x768x768` | dense | `61.507 ms` | `9.820` | `19.639` | Windows/MinGW, `reps=10`, PASS |
 
-For this large shape, the accelerator hardware estimate is:
+Compared with the i9-14900 CPU run collected locally, the accelerator hardware
+estimate is:
 
 ```text
 271.169 ms / 91.914 ms = 2.95x faster than the i9-14900 CPU baseline
+```
+
+Compared with the i5-1335U CPU result collected on Windows/MinGW, the CPU is:
+
+```text
+91.914 ms / 61.507 ms = 1.49x faster than the accelerator hardware estimate
 ```
 
 The VCS simulation wall time for the accelerator run was about `2579.510 s`
@@ -88,6 +96,19 @@ CPU_RESULT time_per_matmul_s=0.271168838
 CPU_RESULT macs=603979776 ops=1207959552
 CPU_RESULT gmac_s=2.227320
 CPU_RESULT gops_s=4.454640
+CPU_RESULT checksum=38661030315
+```
+
+Raw i5 CPU result:
+
+```text
+CPU_RESULT status=PASS
+CPU_RESULT m=1024 k=768 n=768 mode=dense reps=10
+CPU_RESULT total_time_s=0.615071500
+CPU_RESULT time_per_matmul_s=0.061507150
+CPU_RESULT macs=603979776 ops=1207959552
+CPU_RESULT gmac_s=9.819668
+CPU_RESULT gops_s=19.639335
 CPU_RESULT checksum=38661030315
 ```
 
@@ -326,4 +347,3 @@ For the final report, include:
 - CPU comparison: i9-14900 and i5-1335U on the same shapes
 - Sparse discussion: functional sparse support, current latency limitation,
   and future tile-level skipping
-

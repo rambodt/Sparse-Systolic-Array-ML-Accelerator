@@ -66,6 +66,10 @@ static uint64_t checksum(int n) {
     return s;
 }
 
+static void perturb_input(int rep) {
+    A[0][0] = (uint8_t)(((rep * 7 + 1) % 15) + 1);
+}
+
 static double elapsed_seconds(struct timespec a, struct timespec b) {
     return (double)(b.tv_sec - a.tv_sec) + (double)(b.tv_nsec - a.tv_nsec) * 1.0e-9;
 }
@@ -93,9 +97,12 @@ int main(int argc, char **argv) {
 
     struct timespec t0;
     struct timespec t1;
+    uint64_t timed_checksum = 0;
     clock_gettime(CLOCK_MONOTONIC, &t0);
     for (int r = 0; r < reps; r++) {
+        perturb_input(r);
         matmul_cpu(n);
+        timed_checksum += checksum(n);
     }
     clock_gettime(CLOCK_MONOTONIC, &t1);
 
@@ -112,6 +119,7 @@ int main(int argc, char **argv) {
            (unsigned long long)macs, (unsigned long long)ops);
     printf("CPU_RESULT gmac_s=%.6f\n", (double)macs / per_run_s / 1.0e9);
     printf("CPU_RESULT gops_s=%.6f\n", (double)ops / per_run_s / 1.0e9);
+    printf("CPU_RESULT timed_checksum=%llu\n", (unsigned long long)timed_checksum);
     printf("CPU_RESULT checksum=%llu\n", (unsigned long long)checksum(n));
 
     return 0;
