@@ -7,8 +7,8 @@
 #include <time.h>
 
 #define MAX_M 1024
-#define MAX_K 768
-#define MAX_N 768
+#define MAX_K 3072
+#define MAX_N 3072
 
 static uint8_t A[MAX_M][MAX_K];
 static uint8_t B[MAX_K][MAX_N];

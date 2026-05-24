@@ -47,20 +47,28 @@ example processing `1024` token rows with hidden size `768`.
 | Platform | Shape | Mode | Time / Matmul | GMAC/s | GOPS/s | Notes |
 |---|---:|---|---:|---:|---:|---|
 | Accelerator RTL-derived hardware estimate | `1024x768x768` | dense | `91.914 ms` | `6.571` | `13.142` | `CHECK=sample`, PASS |
-| i9-14900 CPU | `1024x768x768` | dense | `271.169 ms` | `2.227` | `4.455` | `reps=10`, PASS |
-| i5-1335U CPU | `1024x768x768` | dense | `61.507 ms` | `9.820` | `19.639` | Windows/MinGW, `reps=10`, PASS |
+| i9-14900 CPU | `1024x768x768` | dense | `271.459 ms` | `2.225` | `4.450` | hardened benchmark, `reps=10`, PASS |
+| i5-1335U CPU | `1024x768x768` | dense | `63.869 ms` | `9.457` | `18.913` | hardened benchmark, Windows/MinGW, `reps=100`, PASS |
+| Ryzen 9 7900X CPU | `1024x768x768` | dense | `40.754 ms` | `14.820` | `29.640` | hardened benchmark, Windows, `reps=100`, PASS |
 
 Compared with the i9-14900 CPU run collected locally, the accelerator hardware
 estimate is:
 
 ```text
-271.169 ms / 91.914 ms = 2.95x faster than the i9-14900 CPU baseline
+271.459 ms / 91.914 ms = 2.95x faster than the i9-14900 CPU baseline
 ```
 
-Compared with the i5-1335U CPU result collected on Windows/MinGW, the CPU is:
+Compared with the hardened i5-1335U CPU result collected on Windows/MinGW, the
+CPU is:
 
 ```text
-91.914 ms / 61.507 ms = 1.49x faster than the accelerator hardware estimate
+91.914 ms / 63.869 ms = 1.44x faster than the accelerator hardware estimate
+```
+
+Compared with the Ryzen 9 7900X CPU result, the CPU is:
+
+```text
+91.914 ms / 40.754 ms = 2.26x faster than the accelerator hardware estimate
 ```
 
 The VCS simulation wall time for the accelerator run was about `2579.510 s`
@@ -91,25 +99,82 @@ Raw i9 CPU result:
 ```text
 CPU_RESULT status=PASS
 CPU_RESULT m=1024 k=768 n=768 mode=dense reps=10
-CPU_RESULT total_time_s=2.711688380
-CPU_RESULT time_per_matmul_s=0.271168838
+CPU_RESULT total_time_s=2.714591162
+CPU_RESULT time_per_matmul_s=0.271459116
 CPU_RESULT macs=603979776 ops=1207959552
-CPU_RESULT gmac_s=2.227320
-CPU_RESULT gops_s=4.454640
-CPU_RESULT checksum=38661030315
+CPU_RESULT gmac_s=2.224938
+CPU_RESULT gops_s=4.449877
+CPU_RESULT timed_checksum=386610672150
+CPU_RESULT checksum=38661048765
 ```
 
 Raw i5 CPU result:
 
 ```text
 CPU_RESULT status=PASS
-CPU_RESULT m=1024 k=768 n=768 mode=dense reps=10
-CPU_RESULT total_time_s=0.615071500
-CPU_RESULT time_per_matmul_s=0.061507150
+CPU_RESULT m=1024 k=768 n=768 mode=dense reps=100
+CPU_RESULT total_time_s=6.386862400
+CPU_RESULT time_per_matmul_s=0.063868624
 CPU_RESULT macs=603979776 ops=1207959552
-CPU_RESULT gmac_s=9.819668
-CPU_RESULT gops_s=19.639335
-CPU_RESULT checksum=38661030315
+CPU_RESULT gmac_s=9.456596
+CPU_RESULT gops_s=18.913192
+CPU_RESULT timed_checksum=3866106721500
+CPU_RESULT checksum=38661048765
+```
+
+Raw Ryzen 9 7900X CPU result:
+
+```text
+CPU_RESULT status=PASS
+CPU_RESULT m=1024 k=768 n=768 mode=dense reps=100
+CPU_RESULT total_time_s=4.075375800
+CPU_RESULT time_per_matmul_s=0.040753758
+CPU_RESULT macs=603979776 ops=1207959552
+CPU_RESULT gmac_s=14.820223
+CPU_RESULT gops_s=29.640446
+CPU_RESULT timed_checksum=3866106721500
+CPU_RESULT checksum=38661048765
+```
+
+## BERT Feed-Forward CPU Results
+
+The rectangular CPU benchmark now supports the feed-forward dimensions:
+
+```text
+M <= 1024
+K <= 3072
+N <= 3072
+```
+
+These i9-14900 environment runs were collected with the hardened benchmark.
+
+| Platform | Shape | Mode | Time / Matmul | GMAC/s | GOPS/s | Notes |
+|---|---:|---|---:|---:|---:|---|
+| i9-14900 CPU | `1024x768x3072` | dense | `1.223 s` | `1.975` | `3.950` | feed-forward expansion, `reps=10` |
+| i9-14900 CPU | `1024x3072x768` | dense | `4.696 s` | `0.515` | `1.029` | feed-forward contraction, `reps=10` |
+
+Raw i9 CPU results:
+
+```text
+CPU_RESULT status=PASS
+CPU_RESULT m=1024 k=768 n=3072 mode=dense reps=10
+CPU_RESULT total_time_s=12.233560038
+CPU_RESULT time_per_matmul_s=1.223356004
+CPU_RESULT macs=2415919104 ops=4831838208
+CPU_RESULT gmac_s=1.974829
+CPU_RESULT gops_s=3.949658
+CPU_RESULT timed_checksum=1546379919720
+CPU_RESULT checksum=154637918235
+
+CPU_RESULT status=PASS
+CPU_RESULT m=1024 k=3072 n=768 mode=dense reps=10
+CPU_RESULT total_time_s=46.956086654
+CPU_RESULT time_per_matmul_s=4.695608665
+CPU_RESULT macs=2415919104 ops=4831838208
+CPU_RESULT gmac_s=0.514506
+CPU_RESULT gops_s=1.029012
+CPU_RESULT timed_checksum=1546440468750
+CPU_RESULT checksum=154644028425
 ```
 
 ## 128 x 128 Baseline
@@ -206,8 +271,8 @@ The new rectangular RTL benchmark supports:
 
 ```text
 M <= 1024
-K <= 768
-N <= 768
+K <= 3072
+N <= 3072
 ```
 
 It supports these check modes:
@@ -258,6 +323,14 @@ status=PASS
 mismatches=0
 
 16x16x768 dense, CHECK=sample:
+status=PASS
+mismatches=0
+
+16x3072x16 dense, CHECK=sample:
+status=PASS
+mismatches=0
+
+16x16x3072 dense, CHECK=sample:
 status=PASS
 mismatches=0
 ```
