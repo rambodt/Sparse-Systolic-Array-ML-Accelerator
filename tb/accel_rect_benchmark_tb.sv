@@ -10,6 +10,11 @@
 //                                   aliases for M/K/N to avoid N ambiguity
 //   +MODE=<dense|sparse50|sparse75|sparse90>, default dense
 //   +CHECK=<full|sample|checksum|none>, default full
+//   +DUMP_VCD=<path>                 optional DUT-only VCD activity dump for
+//                                    the measured benchmark window
+//   +DUMP_START_CYCLE=<cycles>       optional offset from benchmark start
+//   +DUMP_CYCLES=<cycles>            optional dump length; default dumps until
+//                                    benchmark end
 //
 // The DUT computes one 16x16 tile product per run. This benchmark keeps the
 // output-buffer partial sums on chip across the K tile loop:
@@ -53,6 +58,11 @@ module accel_rect_benchmark_tb;
     int sparse_percent;
     string mode;
     string check_mode;
+    string dump_vcd_file;
+    bit dump_vcd;
+    bit dump_done;
+    longint unsigned dump_start_cycles;
+    longint unsigned dump_cycles;
     longint unsigned cycle_count;
     longint unsigned accel_cycles;
     longint unsigned read_cycles;
@@ -360,6 +370,11 @@ module accel_rect_benchmark_tb;
         check_mode = "full";
         if (!$value$plusargs("CHECK=%s", check_mode))
             check_mode = "full";
+        dump_vcd = $value$plusargs("DUMP_VCD=%s", dump_vcd_file);
+        if (!$value$plusargs("DUMP_START_CYCLE=%d", dump_start_cycles))
+            dump_start_cycles = 0;
+        if (!$value$plusargs("DUMP_CYCLES=%d", dump_cycles))
+            dump_cycles = 0;
 
         parse_dimensions();
         sparse_percent = parse_sparse_percent(mode);
@@ -376,6 +391,27 @@ module accel_rect_benchmark_tb;
             compute_reference();
 
         bench_start_cycle = cycle_count;
+        if (dump_vcd) begin
+            $dumpfile(dump_vcd_file);
+            $dumpvars(0, dut);
+            $dumpoff;
+            dump_done = 0;
+            fork
+                begin
+                    repeat (dump_start_cycles) @(posedge clk);
+                    $dumpon;
+                    $display("POWER_WINDOW_START cycle=%0d time_ns=%0.3f",
+                             cycle_count, real'($time) / 1000.0);
+                    if (dump_cycles != 0) begin
+                        repeat (dump_cycles) @(posedge clk);
+                        $display("POWER_WINDOW_END cycle=%0d time_ns=%0.3f",
+                                 cycle_count, real'($time) / 1000.0);
+                        $dumpoff;
+                        dump_done = 1;
+                    end
+                end
+            join_none
+        end
         for (int ti = 0; ti < bench_m / ARRAY_SIZE; ti++) begin
             for (int tj = 0; tj < bench_n / ARRAY_SIZE; tj++) begin
                 for (int tk = 0; tk < bench_k / ARRAY_SIZE; tk++)
@@ -386,6 +422,12 @@ module accel_rect_benchmark_tb;
             end
         end
         bench_end_cycle = cycle_count;
+        if (dump_vcd && !dump_done) begin
+            $display("POWER_WINDOW_END cycle=%0d time_ns=%0.3f",
+                     cycle_count, real'($time) / 1000.0);
+            $dumpoff;
+            dump_done = 1;
+        end
 
         check_result();
 

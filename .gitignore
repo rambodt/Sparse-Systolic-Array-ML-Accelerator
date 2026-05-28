@@ -38,3 +38,5 @@ benchmarks/cpu_matmul_bench
 
 CONTEXT.md
 coursework_labs_for_tool_reference_only_not relatd_to_project.pdf
+
+benchmarks/*.log

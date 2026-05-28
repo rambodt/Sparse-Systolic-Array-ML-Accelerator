@@ -1,0 +1,14 @@
+# Post-PAR activity-based power analysis for accel_rect_benchmark_tb.
+
+vlsi.core.power_tool: "voltus"
+vlsi.core.power_tool_path:
+  - "${vlsi.core.local_tool_path}/hammer-cadence-plugins/power"
+vlsi.core.power_tool_path_meta: lazysubst
+power.voltus.version: "211"
+
+power.inputs.tb_name: "accel_rect_benchmark_tb"
+power.inputs.tb_dut: "dut"
+power.inputs.database: "/home/rambodt/Sparse-Systolic-Array-ML-Accelerator/asic/build_runs/sparse_mul_gate_4p9ns/par-rundir/latest"
+
+# Use the nominal/extra MMMC corner for report numbers to keep runtime smaller.
+power.inputs.extra_corners_only: true
