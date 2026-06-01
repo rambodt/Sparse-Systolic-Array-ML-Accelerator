@@ -1,3 +1,16 @@
+//------------------------------------------------------------------------------
+// array_top
+//------------------------------------------------------------------------------
+// Weight-stationary 2-D systolic MAC array.
+//
+// Weights are shifted from the top row down during PRELOAD_PE, then held in each
+// PE. Activations enter from the left and move left-to-right. Partial sums move
+// top-to-bottom and emerge from the bottom row as a diagonally staggered stream.
+//
+// The activation and skip-enable delay chains are deliberately matched to the
+// two-stage PE pipeline so each zero-detect flag reaches a PE in the same cycle
+// as the activation value it describes.
+//------------------------------------------------------------------------------
 module array_top #(
     parameter int ARRAY_SIZE = 16,
     parameter int DATA_WIDTH = 8,

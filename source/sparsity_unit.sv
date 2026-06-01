@@ -1,7 +1,19 @@
+//------------------------------------------------------------------------------
+// sparsity_unit
+//------------------------------------------------------------------------------
+// Zero-detect and sparse-mode accounting for activation streams.
+//
+// Activations pass through unchanged. In parallel, this unit detects zero
+// activation values, delays each row's skip flag to match the array's activation
+// staggering, and reports simple per-GEMM utilization counters. The current
+// design reduces switching activity but does not change the tile schedule or
+// cycle count.
+//
 // skip_en_col[r] must arrive at PE[r] at the same cycle as act_stagger[r].
 // With the pipelined PE, row r's activation is staggered by 2*r+1 cycles
 // after act_col_in[r] is presented.
 // This module mirrors the array_top stagger exactly for the zero-detect flag.
+//------------------------------------------------------------------------------
 
 module sparsity_unit #(
     parameter int ARRAY_SIZE = 16,

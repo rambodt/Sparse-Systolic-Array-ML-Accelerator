@@ -1,3 +1,14 @@
+//------------------------------------------------------------------------------
+// pe
+//------------------------------------------------------------------------------
+// Processing element for the weight-stationary systolic array.
+//
+// Each PE stores one INT8 weight, forwards activations to the right, forwards
+// its held weight downward during preload, and accumulates a 16-bit product into
+// a 32-bit partial sum. The multiplier and adder are separated by a register to
+// shorten the post-route critical path. Sparse skip gating zeros the multiplier
+// input path and bypasses accumulation for the matching activation.
+//------------------------------------------------------------------------------
 module pe #(
     parameter int DATA_WIDTH = 8,
     parameter int ACC_WIDTH  = 32

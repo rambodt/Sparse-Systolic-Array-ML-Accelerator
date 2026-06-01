@@ -1,3 +1,13 @@
+//------------------------------------------------------------------------------
+// dma_ctrl
+//------------------------------------------------------------------------------
+// Tile-level control FSM for one 16x16-by-16x16 GEMM tile product.
+//
+// The controller accepts host row writes, fills the inactive scratchpad bank,
+// flips banks, preloads weights into the systolic array, streams activation rows,
+// and generates a one-cycle done pulse after drain/accumulation latency. Larger
+// MxK by KxN GEMMs are handled by software/testbench loops around this unit.
+//------------------------------------------------------------------------------
 module dma_ctrl #(
     parameter int ARRAY_SIZE = 16,
     parameter int DATA_WIDTH = 8,

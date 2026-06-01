@@ -1,3 +1,20 @@
+//------------------------------------------------------------------------------
+// accel_top
+//------------------------------------------------------------------------------
+// Top-level accelerator integration wrapper.
+//
+// This module connects the host/testbench interface, DMA-style tile controller,
+// ping-pong scratchpad, activation sparsity detector, 16x16 systolic array, and
+// output accumulation buffer. The host writes one 16-element row per cycle for
+// the B tile followed by the A tile. The controller then preloads weights,
+// streams activations, drains the array pipeline, and exposes the completed
+// output tile through the registered readback port.
+//
+// Design note:
+//   Top-level host inputs are registered before entering the internal fabric.
+//   This intentionally spends one cycle at the boundary to improve post-route
+//   timing closure for the ASIC implementation.
+//------------------------------------------------------------------------------
 module accel_top #(
     parameter int ARRAY_SIZE       = 16,
     parameter int DATA_WIDTH       = 8,

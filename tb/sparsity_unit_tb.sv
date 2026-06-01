@@ -1,9 +1,18 @@
 `timescale 1ns/1ps
 
+//------------------------------------------------------------------------------
+// sparsity_unit_tb
+//------------------------------------------------------------------------------
 // Directed testbench for sparsity_unit.
+//
+// The testbench uses ARRAY_SIZE=4 to make the stagger timing easy to inspect.
+// It verifies pass-through activation data, vld-gated zero detection, per-row
+// skip flag alignment, utilization counters, clear, and reset behavior.
+//
 // skip_en_col[r] is staggered: a zero in act_in[r] at cycle T
 // produces skip_en_col[r]=1 exactly r+1 cycles later (same delay
 // as the array_top activation stagger).
+//------------------------------------------------------------------------------
 
 module sparsity_unit_tb;
 

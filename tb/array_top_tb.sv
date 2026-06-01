@@ -1,5 +1,13 @@
 `timescale 1ns/1ps
 
+//------------------------------------------------------------------------------
+// array_top_tb
+//------------------------------------------------------------------------------
+// Directed unit-level testbench for the systolic array datapath. The testbench
+// bypasses DMA and scratchpad logic, directly preloads weights and streams A
+// rows into the left edge. Captured bottom-row partial sums are reassembled into
+// a full C tile and compared against a software golden model.
+//
 // Timing relationship (derived from pipeline trace):
 //   At streaming tick S (1-indexed from first act_col_in presentation):
 //     psum_out_row[c] = C[t][c]  where  S = t + c + 2*ARRAY_SIZE + 1
@@ -7,6 +15,7 @@
 // Weight preload order (reverse rows so shift chain lands correctly):
 //   Preload cycle k (0-indexed):  weight_load_in[col] = B[ARRAY_SIZE-1-k][col]
 //   After ARRAY_SIZE preload cycles: PE[r][col].weight_r = B[r][col]
+//------------------------------------------------------------------------------
 
 module array_top_tb;
 
@@ -66,7 +75,9 @@ module array_top_tb;
         for (int c = 0; c < ARRAY_SIZE; c++) weight_load_in[c] = '0;
     endtask
 
-    // Stream A and capture full C = A×B result
+    // Stream A and capture full C = A×B result.
+    // The array emits outputs diagonally, so capture uses the analytical timing
+    // equation rather than assuming rows appear all at once.
     // At tick S (1-indexed): psum_out_row[c] = C[t][c] where S = t+c+2*ARRAY_SIZE+1
     task stream_and_capture(
         input  logic [DATA_WIDTH-1:0] A [ARRAY_SIZE][ARRAY_SIZE],

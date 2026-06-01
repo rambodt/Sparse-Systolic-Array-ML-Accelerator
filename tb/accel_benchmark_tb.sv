@@ -1,5 +1,8 @@
 `timescale 1ns/1ps
 
+//------------------------------------------------------------------------------
+// accel_benchmark_tb
+//------------------------------------------------------------------------------
 // Tiled matrix-multiply benchmark for accel_top.
 //
 // Runtime plusargs:
@@ -12,6 +15,7 @@
 //   for tile_i, tile_j, tile_k:
 //     run DUT on A[tile_i,tile_k] and B[tile_k,tile_j]
 //   read final 16x16 C tile once
+//------------------------------------------------------------------------------
 
 module accel_benchmark_tb;
     timeunit 1ps;
@@ -82,6 +86,8 @@ module accel_benchmark_tb;
         dense_b = DATA_WIDTH'(((r * 5 + c * 11 + 3) % 15) + 1);
     endfunction
 
+    // Deterministic pseudo-random sparsity pattern. This keeps benchmark
+    // results reproducible while avoiding a trivial all-zero block structure.
     function automatic bit make_sparse_zero(input int r, input int c, input int pct);
         int hash;
         begin
@@ -146,6 +152,9 @@ module accel_benchmark_tb;
         read_cycles += read_done_cycle - read_start_cycle;
     endtask
 
+    // Executes one hardware 16x16 tile multiply. clear_tile is asserted for the
+    // first K tile so the output buffer starts a new C tile; later K tiles
+    // accumulate into the same output buffer entries.
     task run_accel_tile(input int tile_i, input int tile_j, input int tile_k, input bit clear_tile);
         int base_i;
         int base_j;

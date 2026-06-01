@@ -1,5 +1,14 @@
 `timescale 1ns/1ps
 
+//------------------------------------------------------------------------------
+// scratchpad_tb
+//------------------------------------------------------------------------------
+// Directed unit testbench for the ping-pong scratchpad. It verifies row-wide
+// reads/writes, independent activation and weight memories, active/inactive bank
+// swapping, and the ability to read the active bank while writing the inactive
+// bank.
+//------------------------------------------------------------------------------
+
 module scratchpad_tb;
 
     localparam int ARRAY_SIZE       = 4;

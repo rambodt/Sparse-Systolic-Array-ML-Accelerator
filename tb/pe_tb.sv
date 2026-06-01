@@ -1,5 +1,13 @@
 `timescale 1ns/1ps
 
+//------------------------------------------------------------------------------
+// pe_tb
+//------------------------------------------------------------------------------
+// Directed unit testbench for a single processing element. It verifies reset,
+// weight preload, two-stage MAC latency, activation forwarding, sparse skip
+// behavior, weight hold behavior, and mid-run reset clearing of pipeline state.
+//------------------------------------------------------------------------------
+
 module pe_tb;
 
     // ------------------------------------------------------------------ params
@@ -25,7 +33,7 @@ module pe_tb;
     initial clk = 0;
     always #5 clk = ~clk;   // 100 MHz
 
-    // ------------------------------------------------------------------ helpers
+    // Shared scoreboard counters used by every check task.
     int pass_count = 0;
     int fail_count = 0;
 

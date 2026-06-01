@@ -1,5 +1,13 @@
 `timescale 1ns/1ps
 
+//------------------------------------------------------------------------------
+// dma_ctrl_tb
+//------------------------------------------------------------------------------
+// Directed FSM testbench for dma_ctrl. The checks walk through a complete tile
+// transaction and verify externally visible protocol signals at each phase:
+// host write readiness, scratchpad write type, bank-swap pulse, weight preload
+// address order, activation streaming order, drain latency, and done pulse.
+//
 // Timing reference (ARRAY_SIZE=4):
 //   LOAD_WEIGHTS : 4 row writes
 //   LOAD_ACTS    : 4 row writes; sp_bank_swap fires on the last one
@@ -10,6 +18,7 @@
 //   DRAIN        : 3*ARRAY_SIZE cycles; all enables low
 //   ACCUMULATE   : 1 cycle; done=0
 //   DONE         : 1 cycle; done=1  -> IDLE
+//------------------------------------------------------------------------------
 
 module dma_ctrl_tb;
 

@@ -1,12 +1,24 @@
 `timescale 1ns/1ps
 
+//------------------------------------------------------------------------------
+// accel_top_tb
+//------------------------------------------------------------------------------
 // End-to-end integration test for accel_top.
+//
+// This is the primary correctness testbench for the integrated accelerator. It
+// drives the same row-write protocol used by the benchmark tests, reads the
+// registered output buffer after completion, and compares every C entry against
+// a software golden model. The first randomized test is intentionally verbose so
+// report figures can show both waveform evidence and console-level matrix
+// agreement.
+//
 // Flow per test:
 //   1. Assert start (clears output buffer, DMA → LOAD_WEIGHTS)
 //   2. write_tile(B) — stream weight words while host_wr_rdy=1
 //   3. write_tile(A) — stream activation rows
 //   4. DMA runs PRELOAD_PE → COMPUTE → DRAIN → ACCUMULATE → DONE autonomously
 //   5. Poll done, then read output buffer and compare to golden C = A×B
+//------------------------------------------------------------------------------
 
 module accel_top_tb;
     timeunit 1ps;
@@ -18,7 +30,8 @@ module accel_top_tb;
     localparam int ROW_W      = $clog2(ARRAY_SIZE);        // 4
     localparam time TB_SAMPLE_DELAY = 2000ps;
 
-    // ------------------------------------------------------------------ ports
+    // DUT interface signals. These names intentionally match accel_top ports so
+    // the wildcard connection below is readable and low-maintenance.
     logic                   clk, rst_n, start, clear_accum, done;
     logic                   host_wr_en, host_wr_rdy;
     logic [ROW_W-1:0]       host_wr_addr;
@@ -37,10 +50,16 @@ module accel_top_tb;
     initial clk = 0;
     always #2500 clk = ~clk;   // 5 ns period, matching the ASIC constraint
 
+    initial begin
+        $fsdbDumpfile("waveform.fsdb");
+        $fsdbDumpvars(0, accel_top_tb);
+    end
+
     int pass_count = 0;
     int fail_count = 0;
+    int random_seed;
 
-    // ------------------------------------------------------------------
+    // Apply a synchronous reset and return all host/readback controls to idle.
     task apply_reset();
         rst_n = 0; start = 0; clear_accum = 0; host_wr_en = 0;
         host_wr_addr = '0; host_wr_data = '0;
@@ -89,6 +108,8 @@ module accel_top_tb;
     endfunction
 
     // Read output buffer and compare every element to golden model.
+    // The output buffer read datapath is registered, so each rd_row/rd_col must
+    // be held for several cycles before sampling rd_data.
     task check_result(
         input string                  test_name,
         input logic [DATA_WIDTH-1:0]  A [ARRAY_SIZE][ARRAY_SIZE],
@@ -116,7 +137,86 @@ module accel_top_tb;
         end
     endtask
 
+    task print_input_matrix(
+        input string                  name,
+        input logic [DATA_WIDTH-1:0]  M [ARRAY_SIZE][ARRAY_SIZE]);
+        $display("%s", name);
+        for (int r = 0; r < ARRAY_SIZE; r++) begin
+            $write("  row %0d:", r);
+            for (int c = 0; c < ARRAY_SIZE; c++)
+                $write(" %0d", M[r][c]);
+            $write("\n");
+        end
+    endtask
+
+    task print_acc_matrix(
+        input string                  name,
+        input logic [ACC_WIDTH-1:0]   M [ARRAY_SIZE][ARRAY_SIZE]);
+        $display("%s", name);
+        for (int r = 0; r < ARRAY_SIZE; r++) begin
+            $write("  row %0d:", r);
+            for (int c = 0; c < ARRAY_SIZE; c++)
+                $write(" %0d", M[r][c]);
+            $write("\n");
+        end
+    endtask
+
+    task print_c00_dot_product(
+        input logic [DATA_WIDTH-1:0]  A [ARRAY_SIZE][ARRAY_SIZE],
+        input logic [DATA_WIDTH-1:0]  B [ARRAY_SIZE][ARRAY_SIZE]);
+        $write("C[0][0] dot product: ");
+        for (int k = 0; k < ARRAY_SIZE; k++) begin
+            if (k != 0) $write(" + ");
+            $write("%0d*%0d", A[0][k], B[k][0]);
+        end
+        $display(" = %0d", golden(A, B, 0, 0));
+    endtask
+
+    // Verbose checker for the report figure. It prints A, B, expected C, and
+    // hardware C. The first waveform readback is C[0][0], which makes the
+    // screenshot easy to connect to the printed dot-product calculation.
+    task check_result_verbose(
+        input string                  test_name,
+        input logic [DATA_WIDTH-1:0]  A [ARRAY_SIZE][ARRAY_SIZE],
+        input logic [DATA_WIDTH-1:0]  B [ARRAY_SIZE][ARRAY_SIZE]);
+        automatic int ok = 1;
+        automatic logic [ACC_WIDTH-1:0] C_exp [ARRAY_SIZE][ARRAY_SIZE];
+        automatic logic [ACC_WIDTH-1:0] C_hw  [ARRAY_SIZE][ARRAY_SIZE];
+
+        for (int r = 0; r < ARRAY_SIZE; r++) begin
+            for (int c = 0; c < ARRAY_SIZE; c++) begin
+                C_exp[r][c] = golden(A, B, r, c);
+                @(negedge clk);
+                rd_row = ROW_W'(r);
+                rd_col = ROW_W'(c);
+                repeat (5) @(posedge clk);
+                #(TB_SAMPLE_DELAY);
+                C_hw[r][c] = rd_data;
+                if (rd_data !== C_exp[r][c]) begin
+                    $display("FAIL  %s  C[%0d][%0d]  got=%0d  exp=%0d",
+                             test_name, r, c, rd_data, C_exp[r][c]);
+                    ok = 0;
+                    fail_count++;
+                end
+            end
+        end
+
+        $display("");
+        $display("=== Verbose matrix check: %s ===", test_name);
+        print_input_matrix("A matrix:", A);
+        print_input_matrix("B matrix:", B);
+        print_c00_dot_product(A, B);
+        print_acc_matrix("Expected C = A x B:", C_exp);
+        print_acc_matrix("Hardware C readback:", C_hw);
+
+        if (ok) begin
+            $display("PASS  %s  all hardware C entries match expected C", test_name);
+            pass_count++;
+        end
+    endtask
+
     // Full GEMM run: start → write tiles → wait done → check.
+    // clear_accum is asserted only at the start of each independent GEMM.
     task run_gemm(
         input string                 test_name,
         input logic [DATA_WIDTH-1:0] A [ARRAY_SIZE][ARRAY_SIZE],
@@ -136,6 +236,25 @@ module accel_top_tb;
         check_result(test_name, A, B);
     endtask
 
+    task run_gemm_verbose(
+        input string                 test_name,
+        input logic [DATA_WIDTH-1:0] A [ARRAY_SIZE][ARRAY_SIZE],
+        input logic [DATA_WIDTH-1:0] B [ARRAY_SIZE][ARRAY_SIZE]);
+        @(negedge clk);
+        clear_accum = 1;
+        start = 1;
+        @(posedge clk);
+        @(negedge clk);
+        start = 0;
+        clear_accum = 0;
+        write_tile(B);
+        write_tile(A);
+        wait_done(200);
+        repeat (3 * ARRAY_SIZE) @(posedge clk);
+        #(TB_SAMPLE_DELAY);
+        check_result_verbose(test_name, A, B);
+    endtask
+
     // ------------------------------------------------------------------ matrices
     logic [DATA_WIDTH-1:0] A [ARRAY_SIZE][ARRAY_SIZE];
     logic [DATA_WIDTH-1:0] B [ARRAY_SIZE][ARRAY_SIZE];
@@ -146,7 +265,20 @@ module accel_top_tb;
         apply_reset();
 
         // -------------------------------------------------------
-        // TEST 1: Identity A × B = B
+        // TEST 1: Deterministic random values in [1,5].
+        // Use this test for report waveforms: the first readback is C[0][0].
+        // -------------------------------------------------------
+        random_seed = 32'h20260528;
+        void'($urandom(random_seed));
+        for (int r = 0; r < ARRAY_SIZE; r++)
+            for (int c = 0; c < ARRAY_SIZE; c++) begin
+                A[r][c] = DATA_WIDTH'($urandom_range(1, 5));
+                B[r][c] = DATA_WIDTH'($urandom_range(1, 5));
+            end
+        run_gemm_verbose("random 1..5 A x B", A, B);
+
+        // -------------------------------------------------------
+        // TEST 2: Identity A × B = B
         // -------------------------------------------------------
         for (int r = 0; r < ARRAY_SIZE; r++)
             for (int c = 0; c < ARRAY_SIZE; c++) begin
@@ -156,7 +288,7 @@ module accel_top_tb;
         run_gemm("identity A × B = B", A, B);
 
         // -------------------------------------------------------
-        // TEST 2: All-ones × All-ones → every entry = ARRAY_SIZE
+        // TEST 3: All-ones × All-ones → every entry = ARRAY_SIZE
         // -------------------------------------------------------
         for (int r = 0; r < ARRAY_SIZE; r++)
             for (int c = 0; c < ARRAY_SIZE; c++) begin
@@ -166,7 +298,7 @@ module accel_top_tb;
         run_gemm("all-ones × all-ones", A, B);
 
         // -------------------------------------------------------
-        // TEST 3: Zero A × B = 0  (100% sparsity)
+        // TEST 4: Zero A × B = 0  (100% sparsity)
         // -------------------------------------------------------
         for (int r = 0; r < ARRAY_SIZE; r++)
             for (int c = 0; c < ARRAY_SIZE; c++) begin
@@ -176,7 +308,7 @@ module accel_top_tb;
         run_gemm("zero A × B = 0", A, B);
 
         // -------------------------------------------------------
-        // TEST 4: A × Identity B = A
+        // TEST 5: A × Identity B = A
         // -------------------------------------------------------
         for (int r = 0; r < ARRAY_SIZE; r++)
             for (int c = 0; c < ARRAY_SIZE; c++) begin
@@ -186,7 +318,7 @@ module accel_top_tb;
         run_gemm("A × identity B = A", A, B);
 
         // -------------------------------------------------------
-        // TEST 5: A[r][c]=r+1  B[r][c]=c+1
+        // TEST 6: A[r][c]=r+1  B[r][c]=c+1
         //         C[i][j] = (j+1) * ARRAY_SIZE*(i+1)
         // -------------------------------------------------------
         for (int r = 0; r < ARRAY_SIZE; r++)

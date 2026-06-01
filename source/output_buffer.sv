@@ -1,3 +1,11 @@
+//------------------------------------------------------------------------------
+// output_buffer
+//------------------------------------------------------------------------------
+// Captures the diagonally staggered bottom-row outputs from array_top and stores
+// a dense 16x16 C tile. When clear_accum is not asserted between tile products,
+// the buffer adds new partial sums into the existing entries so K-tiling can be
+// accumulated on chip.
+//
 // Capture timing (derived from array_top pipeline analysis):
 //   At streaming tick S (1-indexed from first act_col_vld rising edge),
 //   psum_out_row[c] = C[t][c]  where  S = t + c + 2*ARRAY_SIZE + 1
@@ -7,6 +15,7 @@
 //
 //   All ARRAY_SIZE*ARRAY_SIZE elements arrive within S = 1..4*ARRAY_SIZE-1.
 //   Outputs for different columns are staggered (diagonal pattern).
+//------------------------------------------------------------------------------
 
 module output_buffer #(
     parameter int ARRAY_SIZE = 16,

@@ -1,5 +1,8 @@
 `timescale 1ns/1ps
 
+//------------------------------------------------------------------------------
+// accel_rect_benchmark_tb
+//------------------------------------------------------------------------------
 // Rectangular tiled matrix-multiply benchmark for accel_top.
 //
 // Runtime plusargs:
@@ -21,6 +24,7 @@
 //   for tile_i in M/16, tile_j in N/16, tile_k in K/16:
 //     run DUT on A[tile_i,tile_k] and B[tile_k,tile_j]
 //   read final 16x16 C tile once
+//------------------------------------------------------------------------------
 
 module accel_rect_benchmark_tb;
     timeunit 1ps;
@@ -104,6 +108,8 @@ module accel_rect_benchmark_tb;
         dense_b = DATA_WIDTH'(((r * 5 + c * 11 + 3) % 15) + 1);
     endfunction
 
+    // Deterministic pseudo-random sparsity pattern applied to A only. The fixed
+    // hash makes dense/sparse runs comparable across simulators and reruns.
     function automatic bit make_sparse_zero(input int r, input int c, input int pct);
         int hash;
         begin
@@ -127,6 +133,9 @@ module accel_rect_benchmark_tb;
         end
     endfunction
 
+    // CHECK controls how much software comparison work is done after the
+    // hardware run. This lets large ML-style cases report hardware timing
+    // without spending most wall-clock time in the reference checker.
     task validate_check_mode(input string check_arg);
         if ((check_arg != "full") && (check_arg != "sample") &&
             (check_arg != "checksum") && (check_arg != "none")) begin
@@ -201,6 +210,9 @@ module accel_rect_benchmark_tb;
         read_cycles += read_done_cycle - read_start_cycle;
     endtask
 
+    // Executes one hardware 16x16 tile multiply. clear_tile is asserted only on
+    // the first K tile of a C tile so the output buffer can accumulate partial
+    // sums across the remaining K tiles.
     task run_accel_tile(input int tile_i, input int tile_j, input int tile_k, input bit clear_tile);
         int base_i;
         int base_j;
@@ -325,6 +337,9 @@ module accel_rect_benchmark_tb;
         end
     endtask
 
+    // Parse both legacy square mode (+N only) and explicit rectangular mode.
+    // ROWS/INNER/COLS aliases avoid ambiguity when scripts already use N for a
+    // square dimension.
     task parse_dimensions();
         bit has_m;
         bit has_k;
@@ -392,6 +407,8 @@ module accel_rect_benchmark_tb;
 
         bench_start_cycle = cycle_count;
         if (dump_vcd) begin
+            // Activity dump is limited to the measured benchmark window so
+            // downstream power analysis does not include reset/setup cycles.
             $dumpfile(dump_vcd_file);
             $dumpvars(0, dut);
             $dumpoff;
