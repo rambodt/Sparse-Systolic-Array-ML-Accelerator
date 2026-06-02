@@ -8,6 +8,9 @@ targeting SKY130 through Hammer, Cadence Genus, Innovus, Tempus, and Voltus.
 The project explores the performance, energy, and physical-design tradeoffs of
 a small matrix-multiply accelerator for machine-learning workloads.
 
+Full technical report:
+[Systolic Array ML Accelerator Report](https://drive.google.com/file/d/1wQedxlc6-jpjAiKoh0OO9AEU2tDd5kII/view?usp=sharing)
+
 ## Highlights
 
 - 16 x 16 systolic array of processing elements
@@ -118,8 +121,7 @@ baseline rather than peak CPU performance.
 | 1024 x 768 x 3072 | 6.571 GMAC/s, 12.21 GMAC/J | 8.09 GMAC/s, 0.430 GMAC/J | 14.30 GMAC/s, 0.184 GMAC/J |
 | 1024 x 3072 x 768 | 6.678 GMAC/s, 12.41 GMAC/J | 5.38 GMAC/s, 0.309 GMAC/J | 9.66 GMAC/s, 0.119 GMAC/J |
 
-Full technical report:
-[Systolic Array ML Accelerator Report](https://drive.google.com/file/d/1wQedxlc6-jpjAiKoh0OO9AEU2tDd5kII/view?usp=sharing)
+
 
 ## ASIC Results
 
@@ -224,4 +226,4 @@ make OBJ_DIR=build_runs/sparse_mul_gate_4p9ns \
 
 ## License
 
-Add a license before using or redistributing this design.
+This project is licensed under the MIT License. See `LICENSE` for details.
