@@ -2,8 +2,8 @@
 
 This repository contains a 16 x 16 INT8 systolic-array matrix-multiply
 accelerator written in SystemVerilog, with directed verification, benchmark
-testbenches, CPU comparison code, and an ASIC implementation flow targeting
-SKY130 through Hammer, Cadence Genus, Innovus, Tempus, and Voltus.
+testbenches, CPU comparison code, and project-specific ASIC flow configuration
+targeting SKY130 through Hammer, Cadence Genus, Innovus, Tempus, and Voltus.
 
 The project explores the performance, energy, and physical-design tradeoffs of
 a small matrix-multiply accelerator for machine-learning workloads.
@@ -105,16 +105,27 @@ Representative accelerator results:
 | 1024 x 768 x 3072 | 367.657 ms | 6.571 GMAC/s | 0.5381 W | 12.21 GMAC/J |
 | 1024 x 3072 x 768 | 361.759 ms | 6.678 GMAC/s | 0.5381 W | 12.41 GMAC/J |
 
-CPU comparison data is summarized in `PERFORMANCE_REPORT.md`. The CPU baseline
-is a simple C implementation, not an optimized BLAS/GEMM library, so it should
-be treated as a straightforward implementation baseline rather than peak CPU
-performance.
+The table below summarizes the measured CPU comparison for two representative
+systems. The CPU baseline is a simple C implementation, not an optimized
+BLAS/GEMM library, so it should be treated as a straightforward implementation
+baseline rather than peak CPU performance.
+
+| Shape | Accelerator | Intel i5-1335U | Ryzen 9 7900X |
+|---|---:|---:|---:|
+| 128 x 128 x 128 | 5.936 GMAC/s, 11.03 GMAC/J | 6.97 GMAC/s, 0.460 GMAC/J | 14.47 GMAC/s, 0.182 GMAC/J |
+| 256 x 256 x 256 | 6.302 GMAC/s, 11.71 GMAC/J | 8.94 GMAC/s, 0.518 GMAC/J | 14.42 GMAC/s, 0.168 GMAC/J |
+| 1024 x 768 x 768 | 6.571 GMAC/s, 12.21 GMAC/J | 7.84 GMAC/s, 0.456 GMAC/J | 13.45 GMAC/s, 0.174 GMAC/J |
+| 1024 x 768 x 3072 | 6.571 GMAC/s, 12.21 GMAC/J | 8.09 GMAC/s, 0.430 GMAC/J | 14.30 GMAC/s, 0.184 GMAC/J |
+| 1024 x 3072 x 768 | 6.678 GMAC/s, 12.41 GMAC/J | 5.38 GMAC/s, 0.309 GMAC/J | 9.66 GMAC/s, 0.119 GMAC/J |
+
+Full technical report:
+[Systolic Array ML Accelerator Report](https://drive.google.com/file/d/1wQedxlc6-jpjAiKoh0OO9AEU2tDd5kII/view?usp=sharing)
 
 ## ASIC Results
 
 The final reported ASIC implementation was generated with the 4.9 ns timing
 configuration in `asic/cfg/timing_4p9.yml`. Generated build directories are not
-committed by default; the summarized results are included in the report files.
+committed by default; key results are summarized below.
 
 Timing signoff was performed with Tempus using a 5.0 ns clock target:
 
@@ -148,7 +159,6 @@ tb/                                      SystemVerilog testbenches
 benchmarks/                              CPU benchmark source and notes
 scripts/                                 helper scripts and golden-model utilities
 asic/                                    Hammer/Cadence ASIC flow configuration
-PERFORMANCE_REPORT.md                    detailed benchmark and PPA results
 Systolic_Array_Architecture_Design_Document.md
                                         combined design, verification, and result report
 ```
@@ -170,8 +180,10 @@ For the rectangular benchmark:
 
 ## Running the ASIC Flow
 
-Run commands from `asic/`. The flow expects the Hammer/CAD support checkout and
-Cadence tool licenses.
+Run commands from `asic/` after connecting the project configuration to a
+compatible Hammer/SKY130/Cadence environment. The repository includes the
+project-specific RTL, testbenches, and Hammer YAML/TCL configuration files, but
+does not include the external CAD framework or licensed tool setup.
 
 ```bash
 cd asic
@@ -179,7 +191,7 @@ make syn
 make par
 ```
 
-The final project build used the 4.9 ns timing override:
+The final project build used the 4.9 ns timing configuration:
 
 ```bash
 make OBJ_DIR=build_runs/sparse_mul_gate_4p9ns \
