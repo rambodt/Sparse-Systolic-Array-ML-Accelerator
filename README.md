@@ -8,8 +8,6 @@ targeting SKY130 through Hammer, Cadence Genus, Innovus, Tempus, and Voltus.
 The project explores the performance, energy, and physical-design tradeoffs of
 a small matrix-multiply accelerator for machine-learning workloads.
 
-Full technical report:
-[Systolic Array ML Accelerator Report](https://drive.google.com/file/d/1wQedxlc6-jpjAiKoh0OO9AEU2tDd5kII/view?usp=sharing)
 
 ## Highlights
 
@@ -226,6 +224,8 @@ make OBJ_DIR=build_runs/obuf_psumfix_3000_6ns \
 - CPU benchmark comparisons are against simple C code, not optimized BLAS.
 - Power comparison is not perfectly apples-to-apples: CPU power is package/PPT
   measured power, while accelerator power is post-PAR EDA-estimated chip power.
+- No I/O pad ring, DFT/scan, or packaging -- this is a compute-block PAR flow,
+  not a tapeout-ready chip.
 
 ## License
 
