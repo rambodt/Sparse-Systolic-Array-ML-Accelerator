@@ -170,7 +170,6 @@ Physical verification status:
 source/                                  SystemVerilog RTL
 tb/                                      SystemVerilog testbenches
 benchmarks/                              CPU benchmark source and notes
-scripts/                                 helper scripts and golden-model utilities
 asic/                                    Hammer/Cadence ASIC flow configuration
 ```
 

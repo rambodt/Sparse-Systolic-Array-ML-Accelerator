@@ -15,11 +15,6 @@ synth/*.qws
 synth/*.rpt
 synth/*.smsg
 
-# Python
-__pycache__/
-*.pyc
-scripts/plots/
-
 # Hammer / Cadence ASIC flow
 ee477-hammer-cad/
 asic/build/
