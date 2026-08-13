@@ -24,7 +24,7 @@ Supported data modes:
 Build:
 
 ```bash
-cd /home/rambodt/Sparse-Systolic-Array-ML-Accelerator/benchmarks
+cd benchmarks
 make
 ```
 
@@ -50,14 +50,14 @@ Use enough repetitions that the runtime is comfortably measurable.
 Build/run the default `64x64` dense benchmark:
 
 ```bash
-cd /home/rambodt/Sparse-Systolic-Array-ML-Accelerator/asic
+cd asic
 make OBJ_DIR=build_bench TB_CFGS=cfg/systolic_array_benchmark_tb.yml sim-rtl
 ```
 
 After the simulator is built, run other benchmark sizes/modes directly:
 
 ```bash
-cd /home/rambodt/Sparse-Systolic-Array-ML-Accelerator/asic/build_bench/sim-rtl-rundir
+cd asic/build_bench/sim-rtl-rundir
 ./simv +N=64  +MODE=dense
 ./simv +N=128 +MODE=dense
 ./simv +N=256 +MODE=dense

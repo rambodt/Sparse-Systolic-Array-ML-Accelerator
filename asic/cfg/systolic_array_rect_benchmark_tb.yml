@@ -1,4 +1,3 @@
-# RTL simulation-only inputs for rectangular tiled matrix-multiply benchmarking.
 
 sim.inputs.tb_name: "accel_rect_benchmark_tb"
 

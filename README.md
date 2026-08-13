@@ -19,7 +19,8 @@ Full technical report:
 - Weight-stationary dataflow
 - Ping-pong scratchpad for activation and weight tile storage
 - Output accumulation buffer for accumulating across K tiles
-- Sparse activation detection with multiplier/adder switching reduction
+- Sparse activation and weight zero-detection with switching reduction
+- Overlapped tile prefetch and compute (next tile loads while current tile runs)
 - Rectangular GEMM benchmark support for ML-style shapes
 - ASIC implementation in SKY130 with post-route timing, area, and power reports
 
@@ -28,7 +29,8 @@ Full technical report:
 At a high level, the accelerator contains:
 
 - `accel_top`: top-level integration
-- `dma_ctrl`: tile-load and compute controller
+- `dma_ctrl`: tile controller -- separate prefetch and compute FSMs run
+  concurrently so the next tile loads while the current one is computing
 - `scratchpad`: ping-pong activation/weight storage
 - `sparsity_unit`: zero-activation detection and skip-signal generation
 - `array_top`: 16 x 16 systolic PE grid
@@ -47,20 +49,21 @@ time and uses the output buffer to accumulate partial sums across K tiles.
 
 ## Sparse Mode
 
-Sparse mode detects zero activations and suppresses the corresponding MAC
-datapath activity. In the current design, sparsity reduces switching power but
-does not reduce cycle count because the controller still follows the dense tile
-schedule.
+Sparse mode detects zero values on both sides of the multiply -- a zero
+activation (from `sparsity_unit`) or a zero stationary weight -- and gates the
+multiplier for either case. It reduces switching power but not cycle count;
+the controller runs the same dense tile schedule regardless of how sparse the
+data is.
 
-Measured post-PAR Voltus activity-based power showed reduced switching power as
-activation sparsity increased:
+Measured post-PAR Voltus activity-based power on `1024x768x768`, both operands
+sparsified independently at the same target density:
 
-| Mode | Total Power | Switching Power |
-|---|---:|---:|
-| Dense | 538.295 mW | 160.672 mW |
-| Sparse 50% | 533.070 mW | 157.904 mW |
-| Sparse 75% | 524.987 mW | 153.197 mW |
-| Sparse 90% | 515.493 mW | 147.764 mW |
+| Mode | Total Power | Switching Power | Reduction |
+|---|---:|---:|---:|
+| Dense | 1.347 W | 396.111 mW | baseline |
+| Sparse 50% | 1.128 W | 283.284 mW | 16.23% |
+| Sparse 75% | 0.929 W | 180.023 mW | 31.02% |
+| Sparse 90% | 0.738 W | 79.844 mW | 45.18% |
 
 ## Verification
 
@@ -69,10 +72,6 @@ VCS. Each major block has a dedicated testbench:
 
 | Testbench | Purpose |
 |---|---|
-| `tb/pe_tb.sv` | PE MAC, skip behavior, and pipeline timing |
-| `tb/array_top_tb.sv` | Systolic-array data movement and psum output |
-| `tb/scratchpad_tb.sv` | Banked scratchpad write/read and ping-pong swap |
-| `tb/dma_ctrl_tb.sv` | Controller state sequencing and output controls |
 | `tb/sparsity_unit_tb.sv` | Zero detection, skip alignment, and counters |
 | `tb/accel_top_tb.sv` | Integrated 16 x 16 GEMM against a golden model |
 | `tb/accel_benchmark_tb.sv` | Square tiled GEMM benchmarks |
@@ -91,22 +90,24 @@ sparse rectangular GEMMs.
 
 ## Performance Summary
 
-Accelerator runtime is reported from simulated cycle count at a 5.0 ns clock
-period:
+Accelerator runtime is reported from simulated cycle count at the signed-off
+6.0 ns clock period:
 
 ```text
-hardware_time = cycles x 5.0 ns
+hardware_time = cycles x 6.0 ns
 ```
 
-Representative accelerator results:
+Representative accelerator results, `SCHED=pipelined_reuse` (weight reuse
+across row-tiles, non-blocking tile issuance, all 4 accumulator slots used
+concurrently):
 
 | Shape | Time / Matmul | Throughput | Avg Power | Energy Efficiency |
 |---|---:|---:|---:|---:|
-| 128 x 128 x 128 | 0.353 ms | 5.936 GMAC/s | 0.5381 W | 11.03 GMAC/J |
-| 256 x 256 x 256 | 2.662 ms | 6.302 GMAC/s | 0.5381 W | 11.71 GMAC/J |
-| 1024 x 768 x 768 | 91.914 ms | 6.571 GMAC/s | 0.5381 W | 12.21 GMAC/J |
-| 1024 x 768 x 3072 | 367.657 ms | 6.571 GMAC/s | 0.5381 W | 12.21 GMAC/J |
-| 1024 x 3072 x 768 | 361.759 ms | 6.678 GMAC/s | 0.5381 W | 12.41 GMAC/J |
+| 128 x 128 x 128 | 0.1123 ms | 18.67 GMAC/s | 0.995 W | 18.76 GMAC/J |
+| 256 x 256 x 256 | 0.6981 ms | 24.03 GMAC/s | 1.207 W | 19.90 GMAC/J |
+| 1024 x 768 x 768 | 20.321 ms | 29.72 GMAC/s | 1.347 W | 22.07 GMAC/J |
+| 1024 x 768 x 3072 | 81.282 ms | 29.72 GMAC/s | 1.347 W | 22.07 GMAC/J |
+| 1024 x 3072 x 768 | 74.066 ms | 32.62 GMAC/s | 1.347 W | 24.22 GMAC/J |
 
 The table below summarizes the measured CPU comparison for two representative
 systems. The CPU baseline is a simple C implementation, not an optimized
@@ -115,43 +116,55 @@ baseline rather than peak CPU performance.
 
 | Shape | Accelerator | Intel i5-1335U | Ryzen 9 7900X |
 |---|---:|---:|---:|
-| 128 x 128 x 128 | 5.936 GMAC/s, 11.03 GMAC/J | 6.97 GMAC/s, 0.460 GMAC/J | 14.47 GMAC/s, 0.182 GMAC/J |
-| 256 x 256 x 256 | 6.302 GMAC/s, 11.71 GMAC/J | 8.94 GMAC/s, 0.518 GMAC/J | 14.42 GMAC/s, 0.168 GMAC/J |
-| 1024 x 768 x 768 | 6.571 GMAC/s, 12.21 GMAC/J | 7.84 GMAC/s, 0.456 GMAC/J | 13.45 GMAC/s, 0.174 GMAC/J |
-| 1024 x 768 x 3072 | 6.571 GMAC/s, 12.21 GMAC/J | 8.09 GMAC/s, 0.430 GMAC/J | 14.30 GMAC/s, 0.184 GMAC/J |
-| 1024 x 3072 x 768 | 6.678 GMAC/s, 12.41 GMAC/J | 5.38 GMAC/s, 0.309 GMAC/J | 9.66 GMAC/s, 0.119 GMAC/J |
+| 128 x 128 x 128 | 18.67 GMAC/s, 18.76 GMAC/J | 6.97 GMAC/s, 0.675 GMAC/J | 14.47 GMAC/s, 0.466 GMAC/J |
+| 256 x 256 x 256 | 24.03 GMAC/s, 19.90 GMAC/J | 8.94 GMAC/s, 0.719 GMAC/J | 14.42 GMAC/s, 0.388 GMAC/J |
+| 1024 x 768 x 768 | 29.72 GMAC/s, 22.07 GMAC/J | 7.84 GMAC/s, 0.633 GMAC/J | 13.45 GMAC/s, 0.471 GMAC/J |
+| 1024 x 768 x 3072 | 29.72 GMAC/s, 22.07 GMAC/J | 8.09 GMAC/s, 0.578 GMAC/J | 14.30 GMAC/s, 0.488 GMAC/J |
+| 1024 x 3072 x 768 | 32.62 GMAC/s, 24.22 GMAC/J | 5.38 GMAC/s, 0.427 GMAC/J | 9.66 GMAC/s, 0.294 GMAC/J |
 
-
+CPU GMAC/J above is net of idle power: `GMAC/s / (gross power - idle power)`,
+using measured idle draw of 4.83 W (i5-1335U) and 48.58 W (Ryzen 9 7900X).
 
 ## ASIC Results
 
-The final reported ASIC implementation was generated with the 4.9 ns timing
-configuration in `asic/cfg/timing_4p9.yml`. Generated build directories are not
-committed by default; key results are summarized below.
+The final reported ASIC implementation is `obuf_psumfix_3000_6ns`, generated
+with the 6.0 ns timing configuration in `asic/cfg/timing_6ns.yml` and the
+3000x3000 um floorplan in `asic/cfg/floorplan_3000.yml`. Generated build
+directories are not committed by default; key results are summarized below.
 
-Timing signoff was performed with Tempus using a 5.0 ns clock target:
+Timing signoff was performed with Tempus using a 6.0 ns clock target.
 
 | Check | Corner | Worst Slack | Status |
 |---|---|---:|---|
-| Setup | ss 100 C / 1.60 V | +0.057 ns | PASS |
-| Hold | ff -40 C / 1.95 V | +0.175 ns | PASS |
+| Setup | ss 100 C / 1.60 V | +0.039 ns | PASS |
+| Hold | ff -40 C / 1.95 V | +0.109 ns | PASS |
 
 Physical implementation summary:
 
 | Metric | Value |
 |---|---:|
-| Clock target | 5.0 ns / 200 MHz |
-| Die size | 5 mm x 5 mm |
-| Cell area | 2.262 mm2 |
-| Density | 8.6% |
-| Instances | 231 K leaf cells |
-| Activity-based dense power | about 538 mW |
+| Clock target | 6.0 ns / 166.67 MHz |
+| Die size | 3 mm x 3 mm |
+| Cell area | 4.991 mm2 |
+| Density | 55.46% |
+| Instances | 545,937 leaf cells |
+| Activity-based dense power | 0.995 W - 1.347 W (varies by workload shape) |
+
+Area by top-level block (no SRAM macros in this design -- everything is
+standard-cell/flip-flop based):
+
+| Block | Area | Share |
+|---|---:|---:|
+| `u_obuf` | 2.844 mm2 | 57.0% |
+| `u_array` | 1.787 mm2 | 35.8% |
+| `u_scratchpad` | 0.323 mm2 | 6.5% |
+| `u_sparsity` | 0.012 mm2 | 0.2% |
+| `u_dma` | 0.002 mm2 | 0.03% |
 
 Physical verification status:
 
-- DRC: no rule violations listed in the Magic DRC output
-- LVS: internal subcircuits match, but a top-level VDD/VSS power-pin mismatch
-  remains in the Netgen LVS report
+- DRC: Clean - 0 errors (Magic)
+- LVS: Clean - netlists match uniquely and circuits match correctly
 
 ## Repository Layout
 
@@ -161,8 +174,6 @@ tb/                                      SystemVerilog testbenches
 benchmarks/                              CPU benchmark source and notes
 scripts/                                 helper scripts and golden-model utilities
 asic/                                    Hammer/Cadence ASIC flow configuration
-Systolic_Array_Architecture_Design_Document.md
-                                        combined design, verification, and result report
 ```
 
 ## Running RTL Simulations
@@ -193,15 +204,16 @@ make syn
 make par
 ```
 
-The final project build used the 4.9 ns timing configuration:
+The final signed-off build used the 6.0 ns timing configuration and the
+3000x3000 um floorplan override:
 
 ```bash
-make OBJ_DIR=build_runs/sparse_mul_gate_4p9ns \
-  INPUT_CFGS="cfg/systolic_array_cfg.yml cfg/systolic_array_src.yml cfg/timing_4p9.yml" \
+make OBJ_DIR=build_runs/obuf_psumfix_3000_6ns \
+  INPUT_CFGS="cfg/floorplan_3000.yml cfg/systolic_array_cfg.yml cfg/systolic_array_src.yml cfg/timing_6ns.yml" \
   syn
 
-make OBJ_DIR=build_runs/sparse_mul_gate_4p9ns \
-  INPUT_CFGS="cfg/systolic_array_cfg.yml cfg/systolic_array_src.yml cfg/timing_4p9.yml" \
+make OBJ_DIR=build_runs/obuf_psumfix_3000_6ns \
+  INPUT_CFGS="cfg/floorplan_3000.yml cfg/systolic_array_cfg.yml cfg/systolic_array_src.yml cfg/timing_6ns.yml" \
   par
 ```
 
@@ -214,15 +226,6 @@ make OBJ_DIR=build_runs/sparse_mul_gate_4p9ns \
 - CPU benchmark comparisons are against simple C code, not optimized BLAS.
 - Power comparison is not perfectly apples-to-apples: CPU power is package/PPT
   measured power, while accelerator power is post-PAR EDA-estimated chip power.
-- The current floorplan is conservative and not area-optimized.
-
-## Future Work
-
-- Add true sparse scheduling to skip zero tiles/cycles
-- Add boundary masking or zero-padding for non-multiple-of-16 shapes
-- Integrate a real system memory/DMA interface
-- Optimize the floorplan for smaller die area and shorter routes
-- Compare against optimized CPU BLAS and GPU GEMM libraries
 
 ## License
 

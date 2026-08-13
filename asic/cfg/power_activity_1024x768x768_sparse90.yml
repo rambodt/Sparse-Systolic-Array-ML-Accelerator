@@ -1,8 +1,8 @@
 power.inputs.waveforms:
-  - "/homes/rambodt/Sparse-Systolic-Array-ML-Accelerator/asic/build_runs/sparse_mul_gate_4p9ns/sim-par-functional-rundir/power_activity/power_1024x768x768_sparse90_1k.vcd"
+  - "build_runs/obuf_psumfix_3000_6ns/sim-rtl-rundir/activity_1024x768x768_sparse90.vcd"
 
 power.inputs.start_times:
-  - "5022.5ns"
+  - "3027ns"
 
 power.inputs.end_times:
-  - "10022.5ns"
+  - "9027ns"

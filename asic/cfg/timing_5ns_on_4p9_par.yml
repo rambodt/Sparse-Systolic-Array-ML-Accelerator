@@ -1,4 +1,0 @@
-# Use the existing 4.9 ns routed implementation, but sign off timing against a
-# copied post-synthesis SDC with a 5.0 ns clock.
-
-timing.inputs.post_synth_sdc: "/home/rambodt/Sparse-Systolic-Array-ML-Accelerator/asic/build_runs/sparse_mul_gate_4p9ns/syn-rundir/accel_top.mapped_5ns.sdc"

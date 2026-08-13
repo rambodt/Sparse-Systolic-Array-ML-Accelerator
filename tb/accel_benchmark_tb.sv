@@ -26,17 +26,23 @@ module accel_benchmark_tb;
     localparam int ACC_WIDTH  = 32;
     localparam int MAX_N      = 256;
     localparam int ROW_W      = $clog2(ARRAY_SIZE);
+    localparam int PAIR_W     = $clog2(ARRAY_SIZE/2);       // host_wr_addr is a row-pair index
     localparam time TB_SAMPLE_DELAY = 2000ps;
     localparam longint unsigned CLK_PERIOD_PS = 5000;
 
-    logic                   clk, rst_n, start, clear_accum, done;
+    logic                   clk, rst_n, start, clear_accum, done, ready_for_start;
     logic                   host_wr_en, host_wr_rdy;
-    logic [ROW_W-1:0]       host_wr_addr;
-    logic [ARRAY_SIZE*DATA_WIDTH-1:0] host_wr_data;
+    logic [PAIR_W-1:0]      host_wr_addr;
+    logic [2*ARRAY_SIZE*DATA_WIDTH-1:0] host_wr_data;
     logic [ROW_W-1:0]       rd_row, rd_col;
     logic [ARRAY_SIZE*ACC_WIDTH-1:0] rd_row_data;
     logic [ACC_WIDTH-1:0]   rd_data;
     logic [31:0]            total_mac_cycles, skipped_mac_cycles;
+    // This benchmark runs one GEMM per invocation (no K-tiling across
+    // multiple accumulator slots), so always target slot 0.
+    logic [1:0]              acc_slot = 2'b00;
+    // No weight-reuse scheduling exercised here — every tile does a full load.
+    logic                    reuse_weights = 1'b0;
 
     logic [DATA_WIDTH-1:0] A [MAX_N][MAX_N];
     logic [DATA_WIDTH-1:0] B [MAX_N][MAX_N];
@@ -111,16 +117,20 @@ module accel_benchmark_tb;
         @(posedge clk);
     endtask
 
+    // TWO rows per cycle: host_wr_addr is a row-pair index; host_wr_data's
+    // lower half is row 2*addr, upper half row 2*addr+1.
     task write_tile(input logic [DATA_WIDTH-1:0] data [ARRAY_SIZE][ARRAY_SIZE]);
         while (!host_wr_rdy) begin
             @(posedge clk);
         end
         @(negedge clk);
-        for (int r = 0; r < ARRAY_SIZE; r++) begin
+        for (int p = 0; p < ARRAY_SIZE/2; p++) begin
             host_wr_en   = 1'b1;
-            host_wr_addr = ROW_W'(r);
-            for (int c = 0; c < ARRAY_SIZE; c++)
-                host_wr_data[c*DATA_WIDTH +: DATA_WIDTH] = data[r][c];
+            host_wr_addr = PAIR_W'(p);
+            for (int c = 0; c < ARRAY_SIZE; c++) begin
+                host_wr_data[c*DATA_WIDTH +: DATA_WIDTH] = data[2*p][c];
+                host_wr_data[(ARRAY_SIZE+c)*DATA_WIDTH +: DATA_WIDTH] = data[2*p+1][c];
+            end
             @(posedge clk);
             @(negedge clk);
         end

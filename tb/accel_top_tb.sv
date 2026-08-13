@@ -5,18 +5,16 @@
 //------------------------------------------------------------------------------
 // End-to-end integration test for accel_top.
 //
-// This is the primary correctness testbench for the integrated accelerator. It
-// drives the same row-write protocol used by the benchmark tests, reads the
-// registered output buffer after completion, and compares every C entry against
-// a software golden model. The first randomized test is intentionally verbose so
-// report figures can show both waveform evidence and console-level matrix
-// agreement.
+// Primary correctness testbench for the integrated accelerator. Drives the
+// same row-write protocol used by the benchmark tests, reads the registered
+// output buffer after completion, and compares every C entry against a
+// software golden model.
 //
 // Flow per test:
-//   1. Assert start (clears output buffer, DMA → LOAD_WEIGHTS)
+//   1. Assert start (clears output buffer, prefetch FSM starts loading)
 //   2. write_tile(B) — stream weight words while host_wr_rdy=1
 //   3. write_tile(A) — stream activation rows
-//   4. DMA runs PRELOAD_PE → COMPUTE → DRAIN → ACCUMULATE → DONE autonomously
+//   4. dma_ctrl's compute/prefetch FSMs run autonomously to completion
 //   5. Poll done, then read output buffer and compare to golden C = A×B
 //------------------------------------------------------------------------------
 
@@ -28,18 +26,24 @@ module accel_top_tb;
     localparam int DATA_WIDTH = 8;
     localparam int ACC_WIDTH  = 32;
     localparam int ROW_W      = $clog2(ARRAY_SIZE);        // 4
+    localparam int PAIR_W     = $clog2(ARRAY_SIZE/2);       // 3 -- host_wr_addr is a row-pair index
     localparam time TB_SAMPLE_DELAY = 2000ps;
 
     // DUT interface signals. These names intentionally match accel_top ports so
     // the wildcard connection below is readable and low-maintenance.
-    logic                   clk, rst_n, start, clear_accum, done;
+    logic                   clk, rst_n, start, clear_accum, done, ready_for_start;
     logic                   host_wr_en, host_wr_rdy;
-    logic [ROW_W-1:0]       host_wr_addr;
-    logic [ARRAY_SIZE*DATA_WIDTH-1:0] host_wr_data;
+    logic [PAIR_W-1:0]      host_wr_addr;
+    logic [2*ARRAY_SIZE*DATA_WIDTH-1:0] host_wr_data;
     logic [ROW_W-1:0]       rd_row, rd_col;
     logic [ARRAY_SIZE*ACC_WIDTH-1:0] rd_row_data;
     logic [ACC_WIDTH-1:0]   rd_data;
     logic [31:0]            total_mac_cycles, skipped_mac_cycles;
+    // Every test here is an independent single GEMM (no K-tiling across
+    // multiple accumulator slots needed), so always target slot 0.
+    logic [1:0]              acc_slot = 2'b00;
+    // No weight-reuse scheduling exercised here — every tile does a full load.
+    logic                    reuse_weights = 1'b0;
 
     accel_top #(
         .ARRAY_SIZE (ARRAY_SIZE),
@@ -69,17 +73,20 @@ module accel_top_tb;
         @(posedge clk);
     endtask
 
-    // Write ARRAY_SIZE rows back-to-back (host_wr_en stays high throughout).
-    // Waits for host_wr_rdy before starting — safe to call immediately after start.
-    // Memory layout: addr = row*ARRAY_SIZE + col → data[row][col]
+    // Write ARRAY_SIZE rows back-to-back, TWO rows per cycle (host_wr_en
+    // stays high throughout). Waits for host_wr_rdy before starting -- safe
+    // to call immediately after start. host_wr_addr is a row-PAIR index;
+    // host_wr_data's lower half is row 2*addr, upper half row 2*addr+1.
     task write_tile(input logic [DATA_WIDTH-1:0] data [ARRAY_SIZE][ARRAY_SIZE]);
         while (!host_wr_rdy) begin @(posedge clk); end
         @(negedge clk);
-        for (int r = 0; r < ARRAY_SIZE; r++) begin
+        for (int p = 0; p < ARRAY_SIZE/2; p++) begin
             host_wr_en   = 1;
-            host_wr_addr = ROW_W'(r);
-            for (int c = 0; c < ARRAY_SIZE; c++)
-                host_wr_data[c*DATA_WIDTH +: DATA_WIDTH] = data[r][c];
+            host_wr_addr = PAIR_W'(p);
+            for (int c = 0; c < ARRAY_SIZE; c++) begin
+                host_wr_data[c*DATA_WIDTH +: DATA_WIDTH] = data[2*p][c];
+                host_wr_data[(ARRAY_SIZE+c)*DATA_WIDTH +: DATA_WIDTH] = data[2*p+1][c];
+            end
             @(posedge clk);
             @(negedge clk);
         end
@@ -172,9 +179,7 @@ module accel_top_tb;
         $display(" = %0d", golden(A, B, 0, 0));
     endtask
 
-    // Verbose checker for the report figure. It prints A, B, expected C, and
-    // hardware C. The first waveform readback is C[0][0], which makes the
-    // screenshot easy to connect to the printed dot-product calculation.
+    // Verbose checker: prints A, B, expected C, and hardware C.
     task check_result_verbose(
         input string                  test_name,
         input logic [DATA_WIDTH-1:0]  A [ARRAY_SIZE][ARRAY_SIZE],

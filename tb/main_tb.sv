@@ -8,5 +8,5 @@
 //   - accel_top_tb.sv              integrated functional verification
 //   - accel_benchmark_tb.sv        square tiled performance benchmark
 //   - accel_rect_benchmark_tb.sv   rectangular tiled performance/power benchmark
-//   - *_tb.sv                      directed submodule testbenches
+//   - sparsity_unit_tb.sv          directed submodule testbench
 //------------------------------------------------------------------------------

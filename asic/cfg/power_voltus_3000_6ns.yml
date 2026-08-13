@@ -1,0 +1,18 @@
+
+vlsi.core.power_tool: "voltus"
+vlsi.core.power_tool_path:
+  - "${vlsi.core.local_tool_path}/hammer-cadence-plugins/power"
+vlsi.core.power_tool_path_meta: lazysubst
+power.voltus.version: "211"
+
+power.inputs.tb_name: "accel_rect_benchmark_tb"
+power.inputs.tb_dut: "dut"
+power.inputs.top_module: "accel_top"
+power.inputs.database: "build_runs/obuf_psumfix_3000_6ns/par-rundir/latest"
+power.inputs.netlist: "build_runs/obuf_psumfix_3000_6ns/par-rundir/accel_top.lvs.v"
+power.inputs.spefs:
+  - "build_runs/obuf_psumfix_3000_6ns/par-rundir/accel_top.ss_100C_1v60.par.spef"
+  - "build_runs/obuf_psumfix_3000_6ns/par-rundir/accel_top.ff_n40C_1v95.par.spef"
+  - "build_runs/obuf_psumfix_3000_6ns/par-rundir/accel_top.tt_025C_1v80.par.spef"
+
+power.inputs.extra_corners_only: true

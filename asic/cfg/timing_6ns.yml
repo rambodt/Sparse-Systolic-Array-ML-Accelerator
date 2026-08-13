@@ -1,0 +1,5 @@
+
+vlsi.inputs:
+  custom_sdc_files:
+    - "constraints_6ns.tcl"
+  custom_sdc_files_meta: prependlocal

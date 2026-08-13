@@ -1,7 +1,0 @@
-# Timing override for signoff at the nominal 5.0 ns project target.
-
-vlsi.inputs:
-  custom_sdc_files:
-    - "constraints.tcl"
-  custom_sdc_files_meta: prependlocal
-

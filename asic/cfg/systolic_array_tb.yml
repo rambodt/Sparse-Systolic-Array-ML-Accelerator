@@ -1,4 +1,3 @@
-# RTL simulation-only inputs.
 
 sim.inputs.tb_incdir: [
   "../source",

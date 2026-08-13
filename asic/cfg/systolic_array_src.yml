@@ -1,4 +1,3 @@
-# Synthesizable RTL for the accelerator.
 
 synthesis.inputs.input_files: [
   "${bsg_root}/bsg_misc/bsg_defines.v",
@@ -15,6 +14,5 @@ synthesis.inputs.input_files: [
 ]
 synthesis.inputs.input_files_meta: [append, subst]
 
-# Add synthesis input files to RTL simulation inputs.
 sim.inputs.input_files: synthesis.inputs.input_files
 sim.inputs.input_files_meta: [crossref, subst]
