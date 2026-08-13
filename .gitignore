@@ -32,6 +32,7 @@ asic/novas.*
 asic/verdiLog/
 build_runs/
 benchmarks/cpu_matmul_bench
+benchmarks/cpu_rect_matmul_bench
 
 # Claude
 .claude
